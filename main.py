@@ -1,13 +1,11 @@
 from fastapi import FastAPI
+from app.speech_coaching.api import speech_router
 
 app = FastAPI()
 
+# 라우터 연결
+app.include_router(speech_router.router, prefix="/speech")
 
 @app.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-
-@app.get("/hello/{name}")
-async def say_hello(name: str):
-    return {"message": f"Hello {name}"}
+def read_root():
+    return {"message": "AI 스피치 코칭 서버 실행 중"}
