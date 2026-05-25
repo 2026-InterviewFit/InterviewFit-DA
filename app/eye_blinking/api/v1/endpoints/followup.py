@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from app.schemas.followup import FollowUpRequest, FollowUpResponse
-from app.services.followup_service import generate_follow_up_question
+from app.eye_blinking.schemas.followup import FollowUpRequest, FollowUpResponse
+from app.eye_blinking.services.followup_service import generate_follow_up_question
 
 router = APIRouter(prefix="/followup", tags=["followup"])
 

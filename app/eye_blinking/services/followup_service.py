@@ -1,4 +1,4 @@
-from app.schemas.followup import FollowUpRequest, FollowUpResponse
+from app.eye_blinking.schemas.followup import FollowUpRequest, FollowUpResponse
 
 def generate_follow_up_question(request: FollowUpRequest) -> FollowUpResponse:
     """

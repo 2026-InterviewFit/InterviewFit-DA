@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 python-multipart
 opencv-python
-mediapipe
+mediapipe==0.10.9
 numpy
 pydantic
 pydantic-settings
