@@ -3,12 +3,12 @@ import tempfile
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.schemas.eye import BlinkAnalysisResponse, EyeLandmarksResponse
-from app.services.eye_analysis import (
+from app.eye_blinking.schemas.eye import BlinkAnalysisResponse, EyeLandmarksResponse
+from app.eye_blinking.services.eye_analysis import (
     analyze_blinks_from_video,
     extract_eye_landmarks_from_image,
 )
-from app.utils.file_validation import (
+from app.eye_blinking.utils.file_validation import (
     ALLOWED_IMAGE_EXTENSIONS,
     ALLOWED_VIDEO_EXTENSIONS,
     validate_upload_file,
