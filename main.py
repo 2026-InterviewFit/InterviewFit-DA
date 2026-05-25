@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.eye_blinking.api.v1.router import api_router
-from app.eye_blinking.core.config import settings
+from app.core.config import settings
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
