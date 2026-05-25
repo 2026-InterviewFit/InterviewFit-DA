@@ -4,6 +4,7 @@ import librosa
 import numpy as np
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from faster_whisper import WhisperModel
+from . import ai_evaluator_service
 
 # 모델 로드
 print("무료 Whisper AI 모델을 로드하는 중입니다. 잠시만 기다려주세요...")
@@ -96,7 +97,7 @@ def analyze_speech_metrics(stt_text: str, duration_seconds: float, silence_repor
     }
 
 
-def process_interview_analysis(youtube_url: str):
+def process_interview_analysis(youtube_url: str, job_category: str):
     temp_video = "interview.mp4"
     temp_audio = "extracted_voice.wav"
 
@@ -115,5 +116,5 @@ def process_interview_analysis(youtube_url: str):
 
     if os.path.exists(temp_audio): os.remove(temp_audio); print("소리파일제거")
     if os.path.exists(path): os.remove(path); print("시스템 하드디스크 임시 휘발성 파일 자동 청소 완료!")
-
+    report['ai_evaluation'] = ai_evaluator_service.evaluate_interview_content(stt,job_category)
     return report
