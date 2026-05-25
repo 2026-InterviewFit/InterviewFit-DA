@@ -4,14 +4,14 @@ from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.exception_handler import custom_exception_handler
 from app.speech_coaching.api import speech_router
 from app.pose.apis.pose_router import router as pose_router
-from app.question.apis.question_router import router as interview_router
+from app.question.apis.question_router import router as question_router
 
 app = FastAPI()
 
 # 라우터 연결
 app.include_router(speech_router.router, prefix="/speech")
 app.include_router(pose_router)
-app.include_router(interview_router)
+app.include_router(question_router)
 
 @app.get("/")
 def read_root():
