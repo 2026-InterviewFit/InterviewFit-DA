@@ -52,7 +52,7 @@ async def analyze_blinks(video: UploadFile = File(...)):
     validate_upload_file(
         upload_file=video,
         allowed_extensions=ALLOWED_VIDEO_EXTENSIONS,
-        expected_type_prefix="video/",
+        expected_type_prefix="VideoStorage/",
         type_name="비디오",
     )
 

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.VideoStorage.video_router import video_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -19,9 +20,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 기존 API Router
 app.include_router(api_router)
+
+# Video Router 추가
+app.include_router(video_router)
 
 
 @app.get("/")
 def root():
     return {"message": "Interview-Fit AI Server is running"}
+
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"message": "Interview-Fit AI Server is running"}
+
+@app.post("/analyze")
+def analyze_video(data: dict):
+    return {
+        "message": "analysis complete",
+        "result": {
+            "gazeScore": 85,
+            "blinkCount": 20,
+            "postureScore": 90
+        }
+    }
