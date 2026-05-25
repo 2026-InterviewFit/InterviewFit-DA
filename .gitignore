@@ -2,3 +2,9 @@
 __pycache__/
 .DS_Store
 *.pyc
+
+.idea/
+
+.env
+
+imgaes/
