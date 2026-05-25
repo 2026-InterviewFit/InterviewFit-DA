@@ -2,23 +2,16 @@
 
 fastapi
 uvicorn[standard]
-
+python-multipart
 opencv-python
 mediapipe==0.10.9
 numpy
-pandas
-
-python-multipart
 pydantic
-
-sqlalchemy
-psycopg2-binary
+pydantic-settings
+python-dotenv
+google-genai
 
 faster-whisper
 moviepy
 librosa
 yt-dlp
-
-python-dotenv
-
-google-genai
