@@ -1,0 +1,17 @@
+# pip install -r requirements.txt
+
+fastapi
+uvicorn[standard]
+python-multipart
+opencv-python
+mediapipe==0.10.9
+numpy
+pydantic
+pydantic-settings
+python-dotenv
+google-genai
+
+faster-whisper
+moviepy
+librosa
+yt-dlp

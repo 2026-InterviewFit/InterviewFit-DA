@@ -1,11 +1,44 @@
-# Test your FastAPI endpoints
-
+### 서버 상태 확인
 GET http://127.0.0.1:8000/
-Accept: application/json
 
-###
 
-GET http://127.0.0.1:8000/hello/User
-Accept: application/json
+### 헬스 체크
+GET http://127.0.0.1:8000/health
 
-###
+
+### 이미지에서 눈 랜드마크 추출
+# 프로젝트 폴더 안에 sample_face.jpg 파일을 넣고 테스트
+POST http://127.0.0.1:8000/vision/eye-landmarks
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="sample_face.jpg"
+Content-Type: image/jpeg
+
+< ./sample_face.jpg
+--boundary--
+
+
+### 영상에서 눈 깜빡임 분석
+# 프로젝트 폴더 안에 sample_interview.mp4 파일을 넣고 테스트
+POST http://127.0.0.1:8000/vision/blinks
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="sample_interview.mp4"
+Content-Type: video/mp4
+
+< ./sample_interview.mp4
+--boundary--
+
+
+### 꼬리 질문 생성
+POST http://127.0.0.1:8000/interview/follow-up-question
+Content-Type: application/json
+
+{
+  "job_role": "백엔드 개발자",
+  "original_question": "프로젝트에서 가장 어려웠던 문제를 어떻게 해결했나요?",
+  "answer": "팀 프로젝트에서 API 응답 속도가 느린 문제가 있었습니다. 저는 쿼리 구조를 확인했고, 불필요한 중복 조회가 많다는 것을 발견했습니다. 그래서 쿼리를 수정하고 캐싱을 적용해서 응답 속도를 개선했습니다.",
+  "interview_style": "normal"
+}
