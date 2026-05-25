@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import followup, vision
+from app.eye_blinking.api.v1.endpoints import followup, vision
 
 api_router = APIRouter(prefix="/api/v1")
 
