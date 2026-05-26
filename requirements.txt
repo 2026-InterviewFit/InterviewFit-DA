@@ -1,0 +1,19 @@
+# source .venv/bin/activate
+# python -m pip install -r requirements.txt
+# python -m uvicorn main:app --reload
+
+fastapi
+uvicorn[standard]
+python-multipart
+mediapipe==0.10.18
+numpy==1.26.4
+protobuf>=4.25.8,<5
+opencv-contrib-python==4.8.1.78
+pydantic
+pydantic-settings
+python-dotenv
+google-genai
+faster-whisper
+moviepy
+librosa
+yt-dlp
