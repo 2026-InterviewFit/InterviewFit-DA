@@ -70,7 +70,7 @@ def extract_eye_landmarks_from_image(image_bytes: bytes) -> dict:
     with mp_face_mesh.FaceMesh(
         static_image_mode=True,
         max_num_faces=1,
-        refine_landmarks=True,
+        refine_landmarks=False,
         min_detection_confidence=0.5,
     ) as face_mesh:
         results = face_mesh.process(rgb_image)
@@ -139,7 +139,7 @@ def analyze_blinks_from_video(video_path: str) -> dict:
         with mp_face_mesh.FaceMesh(
             static_image_mode=False,
             max_num_faces=1,
-            refine_landmarks=True,
+            refine_landmarks=False,
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5,
         ) as face_mesh:

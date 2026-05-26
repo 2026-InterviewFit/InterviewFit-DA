@@ -22,7 +22,6 @@ def generate_follow_up_question(
         contents=prompt,
     )
 
-    # 모델이 가끔 코드블럭을 붙이는 경우 방어
     cleaned_text = (
         response.text
         .replace("```json", "")
@@ -30,5 +29,16 @@ def generate_follow_up_question(
         .strip()
     )
 
-    result = json.loads(cleaned_text)
+    try:
+        result = json.loads(cleaned_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Gemini 응답을 JSON으로 파싱할 수 없습니다. 응답 내용: {cleaned_text}"
+        ) from e
+
+    if "follow_up_question" not in result:
+        raise ValueError(
+            f"Gemini 응답에 follow_up_question 필드가 없습니다. 응답 내용: {result}"
+        )
+
     return result["follow_up_question"]
