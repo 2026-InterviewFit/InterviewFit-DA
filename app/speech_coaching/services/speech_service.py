@@ -5,6 +5,7 @@ import numpy as np
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from faster_whisper import WhisperModel
 from . import ai_evaluator_service
+from ..infra.spring_client import send_to_spring_server  # 스프링 통신용 모듈 import
 
 # 모델 로드
 print("무료 Whisper AI 모델을 로드하는 중입니다. 잠시만 기다려주세요...")
@@ -116,5 +117,16 @@ def process_interview_analysis(youtube_url: str, job_category: str):
 
     if os.path.exists(temp_audio): os.remove(temp_audio); print("소리파일제거")
     if os.path.exists(path): os.remove(path); print("시스템 하드디스크 임시 휘발성 파일 자동 청소 완료!")
-    report['ai_evaluation'] = ai_evaluator_service.evaluate_interview_content(stt,job_category)
+
+    # Gemini 분석 추가
+    report['ai_evaluation'] = ai_evaluator_service.evaluate_interview_content(stt, job_category)
+    report['job_category'] = job_category
+
+    # [통합] 스프링 클라이언트를 통한 데이터 전송 로직
+    success = send_to_spring_server(report)
+    if success:
+        print("Spring Boot 서버로 데이터 전송 성공!")
+    else:
+        print("Spring Boot 서버 전송 실패!")
+
     return report
