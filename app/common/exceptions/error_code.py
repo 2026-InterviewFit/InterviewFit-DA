@@ -1,5 +1,6 @@
 from enum import Enum
 
 class ErrorCode(str, Enum):
-    IMAGE_READ_FAILED = "IMAGE_READ_FAILED"
     INVALID_FRAME = "INVALID_FRAME"
+    FRAME_NOT_FOUND = "FRAME_NOT_FOUND"
+    POSE_NOT_DETECTED = "POSE_NOT_DETECTED"
