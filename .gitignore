@@ -26,3 +26,9 @@ env/
 
 # Logs
 *.log
+.env
+.venv/
+__pycache__/
+*.pyc
+.env
+.idea/

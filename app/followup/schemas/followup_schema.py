@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class FollowUpRequest(BaseModel):
-    job_role: str = Field(..., examples=["백엔드 개발자"])
+    job: str = Field(..., examples=["백엔드 개발자"])
 
     original_question: str = Field(
         ...,
@@ -26,5 +26,3 @@ class FollowUpRequest(BaseModel):
 
 class FollowUpResponse(BaseModel):
     follow_up_question: str
-    job_role: str
-    original_question: str
