@@ -11,7 +11,7 @@ def get_best_model():
     """사용 가능한 모델 중 flash 모델을 찾아 반환"""
     for m in genai.list_models():
         if 'generateContent' in m.supported_generation_methods and 'flash' in m.name:
-            print(f"선택된 모델: {m.name}")
+            #print(f"선택된 모델: {m.name}")
             return genai.GenerativeModel(m.name)
     # 실패 시 기본 모델 반환
     return genai.GenerativeModel('gemini-1.5-flash')
