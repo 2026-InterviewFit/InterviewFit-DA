@@ -8,10 +8,14 @@ def analyze_posture(shoulder_tilt, face_direction, timestamp):
     shoulder_status = str(ShoulderStatus.BAD)
     face_status = str(FaceStatus.BAD)
 
-    if shoulder_tilt is not None and abs(shoulder_tilt) <= SHOULDER_THRESHOLD:
+    if shoulder_tilt is None:
+        shoulder_status = str(ShoulderStatus.NOT_DETECTED)
+    elif abs(shoulder_tilt) <= SHOULDER_THRESHOLD:
         shoulder_status = str(ShoulderStatus.GOOD)
 
-    if face_direction is not None and abs(face_direction) <= FACE_THRESHOLD:
+    if face_direction is None:
+        face_status = str(FaceStatus.NOT_DETECTED)
+    elif abs(face_direction) <= FACE_THRESHOLD:
         face_status = str(FaceStatus.GOOD)
 
     return PoseAnalysisResponse(
@@ -21,10 +25,3 @@ def analyze_posture(shoulder_tilt, face_direction, timestamp):
         shoulder_status=shoulder_status,
         face_status=face_status
     )
-    #     {
-    #     "timestamp": timestamp,
-    #     "shoulder_tilt": shoulder_tilt,
-    #     "face_direction": face_direction,
-    #     "shoulder_status": shoulder_status,
-    #     "face_status": face_status
-    # }
