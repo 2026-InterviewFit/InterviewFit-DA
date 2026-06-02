@@ -3,10 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.exception_handler import custom_exception_handler
-
 from app.core.config import settings
 
-from app.eye_blinking.api.v1.eye_router import api_router as eye_blinking_router
+from app.eye_blinking.api.v1.router import api_router as eye_blinking_router
+from app.followup.apis.followup_router import router as followup_router
 from app.pose.apis.pose_router import router as pose_router
 from app.VideoStorage.video_router import video_router
 # 1. speech_router 추가
@@ -18,13 +18,11 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# 예외 핸들러 등록
 app.add_exception_handler(
     CustomException,
-    custom_exception_handler
+    custom_exception_handler,
 )
 
-# React 프론트엔드 연결 대비 CORS 허용
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
@@ -33,12 +31,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 라우터 연결
 app.include_router(eye_blinking_router)
+app.include_router(followup_router)
 app.include_router(pose_router)
 app.include_router(video_router)
 # 2. speech_router 등록 (prefix 설정)
 app.include_router(speech_router, prefix="/speech")
+
 
 @app.get("/")
 def root():
@@ -55,5 +54,5 @@ if __name__ == "__main__":
         "main:app",
         host="127.0.0.1",
         port=8000,
-        reload=True
+        reload=True,
     )
