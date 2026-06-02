@@ -17,3 +17,7 @@ faster-whisper
 moviepy
 librosa
 yt-dlp
+httpx
+minio
+psycopg[binary]
+SQLAlchemy
