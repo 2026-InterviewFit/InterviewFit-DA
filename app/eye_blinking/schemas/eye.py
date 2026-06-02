@@ -22,14 +22,8 @@ class EyeLandmarksResponse(BaseModel):
 
 class EyeBlinkingAnalyzeRequest(BaseModel):
     """
-    Spring Boot에서 전달하는 영상 경로 기반 분석 요청 DTO
-
-    Spring 요청 예시:
-    {
-      "videoUrl": "/Users/.../uploads/videos/test.mp4",
-      "userId": 1,
-      "interviewId": 1
-    }
+    Spring Boot에서 전달하는 영상 경로 기반 분석 요청 DTO.
+    camelCase(videoUrl, userId, interviewId)와 snake_case를 모두 허용한다.
     """
 
     model_config = ConfigDict(
@@ -64,6 +58,13 @@ class BlinkAnalysisResponse(BaseModel):
     average_ear: float
     blink_timestamps: List[float]
     evaluation: str
+
+    # 디버깅용 필드
+    min_ear: float | None = None
+    max_ear: float | None = None
+    ear_threshold: float | None = None
+    ear_consec_frames: int | None = None
+    closed_frame_count: int | None = None
 
     # Spring DB 저장용 필드
     blink_rate: float

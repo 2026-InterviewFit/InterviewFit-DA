@@ -18,15 +18,11 @@ from app.eye_blinking.utils.file_validation import (
     validate_upload_file,
 )
 
+
 router = APIRouter(prefix="/vision", tags=["vision"])
 
 
 def calculate_blink_score(blinks_per_minute: float) -> float:
-    """
-    눈 깜빡임 빈도 기반 간단 점수화
-    - 8~30회/분: 정상 범위
-    - 너무 낮거나 높으면 감점
-    """
     if 8 <= blinks_per_minute <= 30:
         return 100.0
 
@@ -37,11 +33,8 @@ def calculate_blink_score(blinks_per_minute: float) -> float:
 
 
 def build_blink_response(result: dict) -> BlinkAnalysisResponse:
-    """
-    기존 분석 결과에 Spring 저장용 필드 blink_rate, score, feedback을 추가한다.
-    """
     blinks_per_minute = float(result.get("blinks_per_minute", 0.0))
-    evaluation = result.get("evaluation", "")
+    evaluation = result.get("evaluation", result.get("feedback", ""))
 
     return BlinkAnalysisResponse(
         total_frames=result.get("total_frames", 0),
@@ -51,19 +44,21 @@ def build_blink_response(result: dict) -> BlinkAnalysisResponse:
         blink_count=result.get("blink_count", 0),
         blinks_per_minute=blinks_per_minute,
         average_ear=result.get("average_ear", 0.0),
+        min_ear=result.get("min_ear"),
+        max_ear=result.get("max_ear"),
+        ear_threshold=result.get("ear_threshold"),
+        ear_consec_frames=result.get("ear_consec_frames"),
+        closed_frame_count=result.get("closed_frame_count"),
         blink_timestamps=result.get("blink_timestamps", []),
         evaluation=evaluation,
         blink_rate=blinks_per_minute,
-        score=calculate_blink_score(blinks_per_minute),
-        feedback=evaluation,
+        score=float(result.get("score", calculate_blink_score(blinks_per_minute))),
+        feedback=result.get("feedback", evaluation),
     )
 
 
 @router.post("/eye-landmarks", response_model=EyeLandmarksResponse)
 async def analyze_eye_landmarks(image: UploadFile = File(...)):
-    """
-    단일 이미지에서 눈 랜드마크를 추출하는 엔드포인트
-    """
     validate_upload_file(
         upload_file=image,
         allowed_extensions=ALLOWED_IMAGE_EXTENSIONS,
@@ -75,8 +70,13 @@ async def analyze_eye_landmarks(image: UploadFile = File(...)):
 
     try:
         result = extract_eye_landmarks_from_image(image_bytes)
+
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -89,15 +89,14 @@ async def analyze_eye_landmarks(image: UploadFile = File(...)):
 @router.post("/blinks", response_model=BlinkAnalysisResponse)
 def analyze_blinks_from_spring(request: EyeBlinkingAnalyzeRequest):
     """
-    Spring Boot에서 저장된 영상 경로(videoUrl)를 받아 눈 깜빡임을 분석하는 엔드포인트
+    Spring Boot에서 저장된 영상 경로(videoUrl)를 받아 눈 깜빡임을 분석한다.
 
-    Spring 요청 예시:
-    {
-      "videoUrl": "/Users/.../uploads/videos/test.mp4",
-      "userId": 1,
-      "interviewId": 1
-    }
+    주의:
+    Docker에서 사용할 경우 backend와 ai-server가 같은 volume 경로를 공유해야 한다.
+    예:
+    backend와 ai-server 모두 /shared/uploads 경로를 볼 수 있어야 함.
     """
+
     video_path = request.video_url
 
     if not os.path.exists(video_path):
@@ -111,7 +110,11 @@ def analyze_blinks_from_spring(request: EyeBlinkingAnalyzeRequest):
         return build_blink_response(result)
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -122,11 +125,10 @@ def analyze_blinks_from_spring(request: EyeBlinkingAnalyzeRequest):
 @router.post("/blinks/upload", response_model=BlinkAnalysisResponse)
 async def analyze_blinks_from_upload(video: UploadFile = File(...)):
     """
-    비디오 파일을 직접 업로드해서 눈 깜빡임을 분석하는 테스트용 엔드포인트
-
-    기존 /blinks 업로드 방식은 Spring 연동용 JSON API와 충돌하므로
-    /blinks/upload로 분리한다.
+    Swagger나 단독 테스트용 업로드 방식 API.
+    Spring 연동은 /blinks JSON 방식 사용.
     """
+
     validate_upload_file(
         upload_file=video,
         allowed_extensions=ALLOWED_VIDEO_EXTENSIONS,
@@ -147,12 +149,17 @@ async def analyze_blinks_from_upload(video: UploadFile = File(...)):
         return build_blink_response(result)
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"분석 중 오류가 발생했습니다: {str(e)}",
         )
+
     finally:
         if tmp_file_path and os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
