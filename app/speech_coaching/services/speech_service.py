@@ -5,7 +5,7 @@ import numpy as np
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from faster_whisper import WhisperModel
 from . import ai_evaluator_service
-from ..infra.spring_client import send_to_spring_server  # 스프링 통신용 모듈 import
+from ..infra.spring_client import send_to_spring_server
 
 # 모델 로드
 print("무료 Whisper AI 모델을 로드하는 중입니다. 잠시만 기다려주세요...")
@@ -15,35 +15,23 @@ print("AI 모델 로드 완료!")
 
 def download_youtube_video(youtube_url: str, output_name: str = "interview") -> str:
     try:
-        print(f"\n유튜브 영상 다운로드 시작: {youtube_url}")
         ydl_opts = {'format': 'best[ext=mp4]/best', 'outtmpl': f'{output_name}.%(ext)s', 'quiet': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([youtube_url])
-        expected_filename = f"{output_name}.mp4"
-        if os.path.exists(expected_filename):
-            print(f"유튜브 영상 다운로드 성공: {expected_filename}")
-            return expected_filename
-        return expected_filename
+        return f"{output_name}.mp4"
     except Exception as e:
         print(f"유튜브 다운로드 실패: {str(e)}")
         return ""
 
 
 def extract_audio_and_get_duration(video_path: str, output_audio_path: str):
-    if not os.path.exists(video_path):
-        print(f"에러: {video_path} 경로에 영상 파일이 없습니다!")
-        return False, 0.0
     try:
-        print(f"영상을 분석하는 중: {video_path}")
         video_clip = VideoFileClip(video_path)
         duration_seconds = video_clip.duration
-        print(f"영상 총 길이 확인됨: {duration_seconds:.2f}초")
-        print(f"오디오 스트림 인코딩 및 변환 중 -> {output_audio_path}")
         video_clip.audio.write_audiofile(output_audio_path, codec='pcm_s16le', logger=None)
         video_clip.close()
         return True, duration_seconds
     except Exception as e:
-        print(f"오디오 추출 및 시간 측정 실패: {str(e)}")
         return False, 0.0
 
 
@@ -62,8 +50,7 @@ def analyze_silence_with_librosa(audio_path: str) -> dict:
         if total_duration - last_end_sec >= 3.0: critical_silence_count += 1
         return {"total_silence_seconds": round(total_silence_seconds, 2),
                 "critical_silence_count": critical_silence_count}
-    except Exception as e:
-        print(f"리브로사 음성 신호 분석 실패: {str(e)}")
+    except Exception:
         return {"total_silence_seconds": 0.0, "critical_silence_count": 0}
 
 
@@ -71,8 +58,8 @@ def run_free_whisper_stt(audio_path: str) -> str:
     try:
         segments, info = model.transcribe(audio_path, beam_size=5, language="ko")
         return " ".join([s.text for s in segments]).strip()
-    except Exception as e:
-        return f"STT 변환 실패: {str(e)}"
+    except Exception:
+        return "STT 변환 실패"
 
 
 def analyze_speech_metrics(stt_text: str, duration_seconds: float, silence_report: dict) -> dict:
@@ -98,7 +85,7 @@ def analyze_speech_metrics(stt_text: str, duration_seconds: float, silence_repor
     }
 
 
-def process_interview_analysis(youtube_url: str, job_category: str):
+def process_interview_analysis(youtube_url: str, job_category: str, interview_id: int):
     temp_video = "interview.mp4"
     temp_audio = "extracted_voice.wav"
 
@@ -108,25 +95,19 @@ def process_interview_analysis(youtube_url: str, job_category: str):
     audio_success, duration = extract_audio_and_get_duration(path, temp_audio)
     if not audio_success: return None
 
-    print("\nLibrosa 음성 파형 정적 탐지 가동...")
     silence = analyze_silence_with_librosa(temp_audio)
-    print("\n인공지능 자막 대본 추출 엔진 가동...")
     stt = run_free_whisper_stt(temp_audio)
-    print("\n데이터 명세 연산 시작...")
     report = analyze_speech_metrics(stt, duration, silence)
 
-    if os.path.exists(temp_audio): os.remove(temp_audio); print("소리파일제거")
-    if os.path.exists(path): os.remove(path); print("시스템 하드디스크 임시 휘발성 파일 자동 청소 완료!")
+    if os.path.exists(temp_audio): os.remove(temp_audio)
+    if os.path.exists(path): os.remove(path)
 
-    # Gemini 분석 추가
+    # Gemini 분석 결과 및 interview_id 추가
     report['ai_evaluation'] = ai_evaluator_service.evaluate_interview_content(stt, job_category)
     report['job_category'] = job_category
+    report['interview_id'] = interview_id
 
-    # [통합] 스프링 클라이언트를 통한 데이터 전송 로직
+    # 스프링 서버 전송
     success = send_to_spring_server(report)
-    if success:
-        print("Spring Boot 서버로 데이터 전송 성공!")
-    else:
-        print("Spring Boot 서버 전송 실패!")
 
     return report
