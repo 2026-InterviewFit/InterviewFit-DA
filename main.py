@@ -6,9 +6,11 @@ from app.common.exceptions.exception_handler import custom_exception_handler
 
 from app.core.config import settings
 
-from app.eye_blinking.api.v1.router import api_router as eye_blinking_router
+from app.eye_blinking.api.v1.eye_router import api_router as eye_blinking_router
 from app.pose.apis.pose_router import router as pose_router
 from app.VideoStorage.video_router import video_router
+# 1. speech_router 추가
+from app.speech_coaching.api.speech_router import router as speech_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -35,16 +37,16 @@ app.add_middleware(
 app.include_router(eye_blinking_router)
 app.include_router(pose_router)
 app.include_router(video_router)
+# 2. speech_router 등록 (prefix 설정)
+app.include_router(speech_router, prefix="/speech")
 
 @app.get("/")
 def root():
     return {"message": "Interview-Fit AI Server is running"}
 
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
 
 if __name__ == "__main__":
     import uvicorn
