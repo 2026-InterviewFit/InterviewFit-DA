@@ -1,13 +1,19 @@
 import os
 import yt_dlp
-import librosa
-import numpy as np
+import logging
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from faster_whisper import WhisperModel
+import librosa
+
+# 임포트 경로가 정확한지 확인하세요 (패키지 구조에 따라 다를 수 있습니다)
 from . import ai_evaluator_service
 from ..infra.spring_client import send_to_spring_server
+from ..infra import s3_client  # 여기서 s3_client 모듈을 가져옵니다
 
-# 모델 로드
+# 로깅 설정
+logger = logging.getLogger(__name__)
+
+# 모델 로드 (전역 변수)
 print("무료 Whisper AI 모델을 로드하는 중입니다. 잠시만 기다려주세요...")
 model = WhisperModel("base", device="cpu", compute_type="float32")
 print("AI 모델 로드 완료!")
@@ -20,7 +26,7 @@ def download_youtube_video(youtube_url: str, output_name: str = "interview") -> 
             ydl.download([youtube_url])
         return f"{output_name}.mp4"
     except Exception as e:
-        print(f"유튜브 다운로드 실패: {str(e)}")
+        logger.error(f"유튜브 다운로드 실패: {str(e)}")
         return ""
 
 
@@ -32,6 +38,7 @@ def extract_audio_and_get_duration(video_path: str, output_audio_path: str):
         video_clip.close()
         return True, duration_seconds
     except Exception as e:
+        logger.error(f"오디오 추출 실패: {e}")
         return False, 0.0
 
 
@@ -56,9 +63,10 @@ def analyze_silence_with_librosa(audio_path: str) -> dict:
 
 def run_free_whisper_stt(audio_path: str) -> str:
     try:
-        segments, info = model.transcribe(audio_path, beam_size=5, language="ko")
+        segments, _ = model.transcribe(audio_path, beam_size=5, language="ko")
         return " ".join([s.text for s in segments]).strip()
-    except Exception:
+    except Exception as e:
+        logger.error(f"STT 변환 실패: {e}")
         return "STT 변환 실패"
 
 
@@ -69,45 +77,50 @@ def analyze_speech_metrics(stt_text: str, duration_seconds: float, silence_repor
     total_filler_count = sum(filler_counts.values())
     speech_rate_bps = len(stt_text.replace(" ", "")) / duration_seconds if duration_seconds > 0 else 0.0
 
-    if speech_rate_bps < 2.5:
-        pace_eval, pace_feedback = "너무 느림", "답변 속도가 느려 지루한 인상을 줄 수 있습니다."
-    elif 2.5 <= speech_rate_bps <= 4.2:
-        pace_eval, pace_feedback = "적절함", "가장 안정적이고 신뢰감을 주는 속도입니다."
-    else:
-        pace_eval, pace_feedback = "너무 빠름", "답변 속도가 너무 빨라 면접관이 내용을 놓칠 우려가 있습니다."
-
     return {
         "text_script": stt_text,
         "filler_word_analysis": {"details": filler_counts, "total_count": total_filler_count},
-        "speech_pace_analysis": {"evaluation": pace_eval, "feedback": pace_feedback,
-                                 "characters_per_second": round(speech_rate_bps, 2)},
+        "speech_pace_analysis": {"characters_per_second": round(speech_rate_bps, 2)},
         "silence_analysis": silence_report
     }
 
 
-def process_interview_analysis(youtube_url: str, job_category: str, interview_id: int):
-    temp_video = "interview.mp4"
-    temp_audio = "extracted_voice.wav"
+def process_interview_analysis(source_type: str, source_value: str, job_category: str, interview_id: int):
+    suffix = os.urandom(4).hex()
+    temp_video = f"temp_video_{suffix}.mp4"
+    temp_audio = f"temp_audio_{suffix}.wav"
+    path = ""
 
-    path = download_youtube_video(youtube_url, "interview")
-    if not path: return None
+    try:
+        # 1. 소스 준비 (핵심 수정!)
+        if source_type == 'youtube':
+            path = download_youtube_video(source_value, f"interview_{suffix}")
+            if not path: return None
+        elif source_type == 'minio':
+            # 여기서 s3_client 모듈을 통해 함수 호출
+            s3_client.download_video_from_minio(source_value, temp_video)
+            path = temp_video
 
-    audio_success, duration = extract_audio_and_get_duration(path, temp_audio)
-    if not audio_success: return None
+        # 2. 분석 수행
+        audio_success, duration = extract_audio_and_get_duration(path, temp_audio)
+        if not audio_success: return None
 
-    silence = analyze_silence_with_librosa(temp_audio)
-    stt = run_free_whisper_stt(temp_audio)
-    report = analyze_speech_metrics(stt, duration, silence)
+        silence = analyze_silence_with_librosa(temp_audio)
+        stt = run_free_whisper_stt(temp_audio)
+        report = analyze_speech_metrics(stt, duration, silence)
 
-    if os.path.exists(temp_audio): os.remove(temp_audio)
-    if os.path.exists(path): os.remove(path)
+        # 3. Gemini 평가 및 데이터 전송
+        report['ai_evaluation'] = ai_evaluator_service.evaluate_interview_content(stt, job_category)
+        report['job_category'] = job_category
+        report['interview_id'] = interview_id
 
-    # Gemini 분석 결과 및 interview_id 추가
-    report['ai_evaluation'] = ai_evaluator_service.evaluate_interview_content(stt, job_category)
-    report['job_category'] = job_category
-    report['interview_id'] = interview_id
+        send_to_spring_server(report)
+        return report
 
-    # 스프링 서버 전송
-    success = send_to_spring_server(report)
-
-    return report
+    except Exception as e:
+        logger.exception(f"분석 파이프라인 에러: {e}")
+        return {"error": str(e)}
+    finally:
+        # 4. 파일 정리
+        for p in [temp_video, temp_audio, path]:
+            if p and os.path.exists(p): os.remove(p)

@@ -26,7 +26,8 @@ def evaluate_interview_content(script: str, job_category: str):
         직무: {job_category}
         답변: {script}
 
-        STAR 기법(상황, 과제, 행동, 결과) 구조 분석과 직무 키워드 포함 여부를 JSON 형식으로 출력하세요.
+        STAR 기법(상황, 과제, 행동, 결
+        과) 구조 분석과 직무 키워드 포함 여부를 JSON 형식으로 출력하세요.
         반드시 아래 포맷만 출력하세요:
         {{"star_score": {{"S": 0, "T": 0, "A": 0, "R": 0}}, "feedback": "...", "keywords": []}}
         """
