@@ -12,7 +12,7 @@ def create_first_question(request: QuestionRequest):
     question_list = generate_first_question(
         request.count,
         request.job,
-        request.resume_content
+        request.cover_letter
     )
 
     return QuestionResponse(

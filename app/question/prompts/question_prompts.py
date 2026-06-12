@@ -1,10 +1,10 @@
-def create_question_prompt(count: int, job: str, resume_content: str | None = None):
-    resume_prompt = ""
+def create_question_prompt(count: int, job: str, cover_letter: str | None = None):
+    cover_letter_prompt = ""
 
-    if resume_content:
-        resume_prompt = f"""
+    if cover_letter:
+        cover_letter_prompt = f"""
             지원자의 자기소개서 내용:
-            {resume_content}
+            {cover_letter}
             """
 
     prompt = f"""
@@ -24,7 +24,7 @@ def create_question_prompt(count: int, job: str, resume_content: str | None = No
 
         직무: {job}
         
-        {resume_prompt}
+        {cover_letter_prompt}
 
         질문 생성:
         """
