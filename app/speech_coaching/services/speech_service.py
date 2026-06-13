@@ -1,25 +1,22 @@
 import os
 import yt_dlp
 import logging
+import librosa
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from faster_whisper import WhisperModel
-import librosa
-
-# 임포트 경로가 정확한지 확인하세요 (패키지 구조에 따라 다를 수 있습니다)
 from . import ai_evaluator_service
 from ..infra.spring_client import send_to_spring_server
-from ..infra import s3_client  # 여기서 s3_client 모듈을 가져옵니다
+from ..infra import s3_client
 
-# 로깅 설정
+# 로깅 및 모델 설정
 logger = logging.getLogger(__name__)
 
-# 모델 로드 (전역 변수)
 print("무료 Whisper AI 모델을 로드하는 중입니다. 잠시만 기다려주세요...")
 model = WhisperModel("base", device="cpu", compute_type="float32")
 print("AI 모델 로드 완료!")
 
 
-def download_youtube_video(youtube_url: str, output_name: str = "interview") -> str:
+def download_youtube_video(youtube_url: str, output_name: str) -> str:
     try:
         ydl_opts = {'format': 'best[ext=mp4]/best', 'outtmpl': f'{output_name}.%(ext)s', 'quiet': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -92,28 +89,33 @@ def process_interview_analysis(source_type: str, source_value: str, job_category
     path = ""
 
     try:
-        # 1. 소스 준비 (핵심 수정!)
+        # 1. 소스 준비 (유튜브, MinIO, 로컬 파일)
         if source_type == 'youtube':
             path = download_youtube_video(source_value, f"interview_{suffix}")
             if not path: return None
         elif source_type == 'minio':
-            # 여기서 s3_client 모듈을 통해 함수 호출
             s3_client.download_video_from_minio(source_value, temp_video)
             path = temp_video
+        elif source_type == 'local':
+            path = source_value
+            if not os.path.exists(path): return {"error": "로컬 파일을 찾을 수 없습니다."}
+        else:
+            return {"error": "지원하지 않는 소스 타입입니다."}
 
         # 2. 분석 수행
         audio_success, duration = extract_audio_and_get_duration(path, temp_audio)
-        if not audio_success: return None
+        if not audio_success: return {"error": "오디오 추출 실패"}
 
         silence = analyze_silence_with_librosa(temp_audio)
         stt = run_free_whisper_stt(temp_audio)
         report = analyze_speech_metrics(stt, duration, silence)
 
-        # 3. Gemini 평가 및 데이터 전송
+        # 3. Gemini 평가 추가
         report['ai_evaluation'] = ai_evaluator_service.evaluate_interview_content(stt, job_category)
         report['job_category'] = job_category
         report['interview_id'] = interview_id
 
+        # 4. 스프링 전송
         send_to_spring_server(report)
         return report
 
@@ -121,6 +123,6 @@ def process_interview_analysis(source_type: str, source_value: str, job_category
         logger.exception(f"분석 파이프라인 에러: {e}")
         return {"error": str(e)}
     finally:
-        # 4. 파일 정리
-        for p in [temp_video, temp_audio, path]:
-            if p and os.path.exists(p): os.remove(p)
+        # 5. 파일 정리 (로컬 원본 제외)
+        if os.path.exists(temp_audio): os.remove(temp_audio)
+        if source_type != 'local' and os.path.exists(path): os.remove(path)

@@ -22,14 +22,19 @@ def evaluate_interview_content(script: str, job_category: str):
         model = get_best_model()  # 자동 모델 선택 호출
 
         prompt = f"""
-        당신은 전문 면접관입니다. 지원자의 답변을 분석하세요.
-        직무: {job_category}
-        답변: {script}
+        당신은 {job_category} 직무의 전문 면접관입니다. 지원자의 답변을 다음 JSON 형식으로만 엄격하게 출력하세요.
+        다른 설명이나 마크다운 형식(```json 등)은 절대 붙이지 마세요.
 
-        STAR 기법(상황, 과제, 행동, 결
-        과) 구조 분석과 직무 키워드 포함 여부를 JSON 형식으로 출력하세요.
-        반드시 아래 포맷만 출력하세요:
-        {{"star_score": {{"S": 0, "T": 0, "A": 0, "R": 0}}, "feedback": "...", "keywords": []}}
+        필수 JSON 포맷:
+        {{
+            "star_score": {{ "S": 0, "T": 0, "A": 0, "R": 0 }},
+            "feedback": "답변에 대한 상세 코칭 (STAR 구조 중심)",
+            "keywords": ["키워드1", "키워드2"],
+            "model_answer": "해당 질문에 대한 이상적인 모범 답변 예시"
+        }}
+
+        직무: {job_category}
+        지원자 답변: {script}
         """
 
         response = model.generate_content(prompt)
