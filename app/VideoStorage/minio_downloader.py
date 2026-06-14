@@ -1,152 +1,121 @@
-# ================================
-# 수정 전 코드
-# ================================
-# from minio import Minio
-# import os
-# import tempfile
-#
-# minio_client = Minio(
-#     "localhost:9000",
-#     access_key="minioadmin",
-#     secret_key="minioadmin123",
-#     secure=False
-# )
-#
-# BUCKET_NAME = "videos"
-#
-#
-# def download_video_from_minio(object_key: str) -> str:
-#     temp_dir = tempfile.gettempdir()
-#     file_name = os.path.basename(object_key)
-#     local_path = os.path.join(temp_dir, file_name)
-#
-#     minio_client.fget_object(
-#         BUCKET_NAME,
-#         object_key,
-#         local_path
-#     )
-#
-#     print("MinIO 다운로드 완료:", local_path)
-#
-#     return local_path
-
-
-# ================================
-# 수정 후 코드
-# ================================
-import os
-import tempfile
 from pathlib import Path
+from tempfile import gettempdir
+from urllib.parse import urlparse
 
 from minio import Minio
+from minio.error import S3Error
 
 from app.core.config import settings
 
 
-# 팀원 VideoStorage, eye-blink 분석이 공통으로 사용하는 MinIO client.
-#
-# 수정 이유:
-# 기존 코드는 MinIO 주소, access key, secret key, bucket 이름이
-# 코드 안에 직접 하드코딩되어 있었다.
-#
-# 로컬 실행에서는 localhost:9000이 맞지만,
-# Docker 환경에서는 minio:9000처럼 주소가 달라질 수 있다.
-#
-# 따라서 settings/.env에서 값을 읽도록 바꾸면
-# 환경이 바뀌어도 코드 수정 없이 .env만 바꾸면 된다.
-minio_client = Minio(
-    settings.MINIO_ENDPOINT,
-    access_key=settings.MINIO_ACCESS_KEY,
-    secret_key=settings.MINIO_SECRET_KEY,
-    secure=settings.MINIO_SECURE,
-)
-
-BUCKET_NAME = settings.MINIO_BUCKET
-
-
-def download_video_from_minio(object_key: str) -> str:
+def get_bucket_name() -> str:
     """
-    MinIO objectKey를 받아 FastAPI 서버가 읽을 수 있는 임시 로컬 파일로 다운로드한다.
-
-    Spring VideoService가 MinIO에 저장한 뒤 반환하는 값은 보통
-    `videos/uuid_filename.webm` 형태의 objectKey다.
-
-    OpenCV(cv2.VideoCapture)는 `videos/xxx.webm` 같은 MinIO objectKey를
-    직접 읽을 수 없으므로 FastAPI 내부 임시 폴더로 내려받은 뒤,
-    실제 로컬 파일 경로를 반환한다.
+    팀원마다 설정 이름이 다를 수 있어서 둘 다 대응.
+    settings에 BUCKET_NAME이 있으면 그걸 우선 사용하고,
+    없으면 MINIO_BUCKET을 사용한다.
     """
+    return getattr(settings, "BUCKET_NAME", None) or getattr(settings, "MINIO_BUCKET")
 
-    # objectKey가 비어 있으면 MinIO 호출 전에 명확한 에러를 발생시킨다.
-    # 기존 코드는 빈 값이 들어와도 바로 fget_object를 호출해서
-    # 에러 원인을 파악하기 어려웠다.
-    if not object_key or not object_key.strip():
-        raise ValueError("MinIO objectKey가 비어 있습니다.")
 
-    # objectKey 예시:
-    # videos/uuid_interview.webm
-    #
-    # 실제 로컬 저장에는 파일명만 사용한다.
-    # 예: uuid_interview.webm
-    safe_file_name = os.path.basename(object_key) or "interview_video.webm"
+def normalize_video_url_to_object_key(video_url: str) -> str:
+    """
+    Spring에서 넘어올 수 있는 값 예시:
+    - videos/abc.webm
+    - interview-videos/abc.webm
+    - abc.webm
+    - http://localhost:9000/videos/abc.webm
 
-    # FastAPI 서버의 임시 폴더 아래 interviewfit-videos 폴더를 만들어 저장한다.
-    # 예: /tmp/interviewfit-videos/uuid_interview.webm
-    temp_dir = Path(tempfile.gettempdir()) / "interviewfit-videos"
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    Python MinIO 클라이언트는 bucket_name과 object_key를 따로 받기 때문에
+    videoUrl에 bucket 이름이 붙어 있으면 제거해야 한다.
+    """
+    bucket_name = get_bucket_name()
 
-    local_path = str(temp_dir / safe_file_name)
+    value = video_url.strip()
 
-    # MinIO에서 objectKey에 해당하는 파일을 local_path로 다운로드한다.
-    minio_client.fget_object(
-        BUCKET_NAME,
-        object_key,
-        local_path,
+    # URL 형태로 넘어온 경우 path만 뽑기
+    if value.startswith("http://") or value.startswith("https://"):
+        parsed = urlparse(value)
+        value = parsed.path.lstrip("/")
+
+    bucket_prefix = f"{bucket_name}/"
+
+    if value.startswith(bucket_prefix):
+        value = value[len(bucket_prefix):]
+
+    return value
+
+
+def build_candidate_object_keys(video_url: str) -> list[str]:
+    """
+    안전장치:
+    1순위: bucket prefix 제거한 objectKey
+    2순위: 원본 videoUrl에서 앞 slash만 제거한 값
+
+    혹시 팀원 코드에서 진짜 objectKey를 videos/abc.webm 형태로 저장한 경우도 대비한다.
+    """
+    normalized_key = normalize_video_url_to_object_key(video_url)
+
+    original_key = video_url.strip()
+    if original_key.startswith("http://") or original_key.startswith("https://"):
+        parsed = urlparse(original_key)
+        original_key = parsed.path.lstrip("/")
+    else:
+        original_key = original_key.lstrip("/")
+
+    candidates = [normalized_key]
+
+    if original_key not in candidates:
+        candidates.append(original_key)
+
+    return candidates
+
+
+def download_video_from_minio(video_url: str) -> str:
+    bucket_name = get_bucket_name()
+
+    client = Minio(
+        settings.MINIO_ENDPOINT,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=settings.MINIO_SECURE,
     )
 
-    print("MinIO 다운로드 완료:", local_path)
-    return local_path
+    temp_dir = Path(gettempdir()) / "interviewfit-videos"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    last_error = None
+
+    for object_key in build_candidate_object_keys(video_url):
+        local_path = temp_dir / Path(object_key).name
+
+        try:
+            client.fget_object(
+                bucket_name,
+                object_key,
+                str(local_path),
+            )
+
+            return str(local_path)
+
+        except S3Error as e:
+            last_error = e
+
+            # object key 후보가 틀린 경우 다음 후보로 재시도
+            if e.code == "NoSuchKey":
+                continue
+
+            raise
+
+    raise RuntimeError(
+        f"MinIO에서 영상을 찾지 못했습니다. "
+        f"bucket={bucket_name}, video_url={video_url}, last_error={last_error}"
+    )
 
 
 def resolve_video_path(video_url: str) -> str:
-    """
-    Spring/FastAPI 테스트에서 들어오는 videoUrl을 실제 파일 경로로 변환한다.
+    local_path = Path(video_url)
 
-    지원하는 입력값:
-    1. 로컬 파일 경로
-       - Swagger 단독 테스트나 /blinks/upload 내부 테스트용
-       - 예: /Users/mxxxdxxx/sample.webm
+    if local_path.exists():
+        return str(local_path)
 
-    2. MinIO objectKey
-       - 팀원 VideoStorage와 연결되는 실제 통합 방식
-       - 예: videos/uuid_sample.webm
-
-    추가 이유:
-    기존 팀원 코드는 MinIO 다운로드만 담당했다.
-    그런데 eye-blink 분석에서는 videoUrl이 로컬 경로일 수도 있고,
-    MinIO objectKey일 수도 있다.
-
-    그래서 eye-blink, pose, speech 같은 영상 분석 기능들이
-    videoUrl을 받았을 때 실제 분석 가능한 파일 경로로 바꾸는 공통 함수가 필요하다.
-    """
-
-    if not video_url or not video_url.strip():
-        raise ValueError("videoUrl 값이 비어 있습니다.")
-
-    # 이미 FastAPI 서버에서 접근 가능한 로컬 파일이면 그대로 사용한다.
-    #
-    # 예:
-    # /Users/mxxxdxxx/interview-fit/ai-server/test.mp4
-    if os.path.exists(video_url):
-        return video_url
-
-    # 팀원 VideoService가 MinIO에 저장한 영상은 보통 videos/로 시작한다.
-    #
-    # 예:
-    # videos/uuid_interview.webm
-    #
-    # 이 경우에는 MinIO에서 임시 파일로 다운로드한 뒤 그 경로를 반환한다.
-    if video_url.startswith("videos/"):
-        return download_video_from_minio(video_url)
-
-    # 로컬 파일도 아니고 MinIO objectKey도 아니면 분석할 수 없는 값이다.
-    raise FileNotFoundError(f"지원하지 않거나 찾을 수 없는 videoUrl입니다: {video_url}")
+    return download_video_from_minio(video_url)
