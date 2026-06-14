@@ -6,14 +6,17 @@ from app.followup.prompts.followup_prompts import create_followup_prompt
 
 
 def _fallback_follow_up_question(
-    job: str,
-    original_question: str,
+    job: str | None,
+    original_question: str | None,
     answer: str,
     interview_style: str = "normal",
 ) -> str:
     """
-    Gemini API 키가 없거나 호출에 실패했을 때 서버 테스트용으로 반환하는 기본 꼬리 질문.
-    Spring 연동 테스트가 Gemini 키 때문에 막히지 않도록 둔다.
+    Gemini API 키가 없거나 호출에 실패했을 때 반환하는 기본 꼬리질문.
+
+    이유:
+    - 팀원이 Spring/FE 연결을 테스트할 때 Gemini 키 문제로 전체 흐름이 막히면 안 됨.
+    - DB 저장, API 연결, 화면 표시 검증은 fallback 질문만으로도 가능함.
     """
 
     if interview_style == "pressure":
@@ -32,28 +35,35 @@ def _fallback_follow_up_question(
 
 
 def generate_follow_up_question(
-    job: str,
-    original_question: str,
+    job: str | None,
+    original_question: str | None,
     answer: str,
     interview_style: str = "normal",
 ) -> str:
     """
-    지원자의 답변을 기반으로 꼬리 질문 1개 생성.
-    Gemini API 사용 가능 시 Gemini 호출, 불가능하면 fallback 질문 반환.
+    지원자 답변을 기반으로 꼬리질문 1개를 생성한다.
+
+    Spring 쪽에서 interviewId/jobRoleId/questionId를 이용해
+    job과 original_question을 가능한 한 채워서 보내지만,
+    값이 일부 비어 있어도 FastAPI가 죽지 않도록 기본값을 둔다.
     """
+
+    safe_job = (job or "일반 직무").strip()
+    safe_original_question = (original_question or "면접 질문").strip()
+    safe_answer = answer.strip()
 
     if followup_client is None:
         return _fallback_follow_up_question(
-            job=job,
-            original_question=original_question,
-            answer=answer,
+            job=safe_job,
+            original_question=safe_original_question,
+            answer=safe_answer,
             interview_style=interview_style,
         )
 
     prompt = create_followup_prompt(
-        job=job,
-        original_question=original_question,
-        answer=answer,
+        job=safe_job,
+        original_question=safe_original_question,
+        answer=safe_answer,
         interview_style=interview_style,
     )
 
@@ -72,9 +82,9 @@ def generate_follow_up_question(
 
         if not cleaned_text:
             return _fallback_follow_up_question(
-                job=job,
-                original_question=original_question,
-                answer=answer,
+                job=safe_job,
+                original_question=safe_original_question,
+                answer=safe_answer,
                 interview_style=interview_style,
             )
 
@@ -82,14 +92,14 @@ def generate_follow_up_question(
             result = json.loads(cleaned_text)
             follow_up_question = result.get("follow_up_question")
         except json.JSONDecodeError:
-            # 모델이 JSON이 아니라 질문 문장만 반환한 경우도 허용
+            # 모델이 JSON이 아니라 질문 문장만 반환한 경우도 허용한다.
             follow_up_question = cleaned_text
 
         if not follow_up_question:
             return _fallback_follow_up_question(
-                job=job,
-                original_question=original_question,
-                answer=answer,
+                job=safe_job,
+                original_question=safe_original_question,
+                answer=safe_answer,
                 interview_style=interview_style,
             )
 
@@ -99,8 +109,8 @@ def generate_follow_up_question(
         print(f"Gemini followup error: {e}")
 
         return _fallback_follow_up_question(
-            job=job,
-            original_question=original_question,
-            answer=answer,
+            job=safe_job,
+            original_question=safe_original_question,
+            answer=safe_answer,
             interview_style=interview_style,
         )
