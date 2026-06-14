@@ -94,7 +94,16 @@ def process_interview_analysis(source_type: str, source_value: str, job_category
             path = download_youtube_video(source_value, f"interview_{suffix}")
             if not path: return None
         elif source_type == 'minio':
-            s3_client.download_video_from_minio(source_value, temp_video)
+            bucket_name = os.getenv("MINIO_BUCKET")
+            # 경로에서 버킷 이름이 포함되어 있으면 제거
+            object_key = source_value.replace(f"{bucket_name}/", "", 1)
+
+            logger.info(f"MinIO 다운로드 시도: bucket={bucket_name}, key={object_key}")
+            s3_client.download_video_from_minio(object_key, temp_video)
+
+            # 파일 존재 여부 및 용량 확인 (에러 방지 핵심!)
+            if not os.path.exists(temp_video) or os.path.getsize(temp_video) == 0:
+                return {"error": "MinIO에서 파일을 찾을 수 없거나 다운로드에 실패했습니다."}
             path = temp_video
         elif source_type == 'local':
             path = source_value
