@@ -12,7 +12,7 @@ from app.question.apis.question_router import router as question_router
 from app.VideoStorage.video_router import video_router
 
 # speech 라우터 임시 비활성화
-# from app.speech_coaching.api.speech_router import router as speech_router
+from app.speech_coaching.api.speech_router import router as speech_router
 
 
 app = FastAPI(
@@ -41,7 +41,7 @@ app.include_router(question_router)
 app.include_router(video_router)
 
 # speech 기능 임시 비활성화
-# app.include_router(speech_router, prefix="/speech")
+app.include_router(speech_router, prefix="/speech")
 
 
 @app.get("/")
