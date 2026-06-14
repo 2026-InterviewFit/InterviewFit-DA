@@ -13,7 +13,9 @@ from app.VideoStorage.video_router import video_router
 
 # speech 라우터 임시 비활성화
 from app.speech_coaching.api.speech_router import router as speech_router
-
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

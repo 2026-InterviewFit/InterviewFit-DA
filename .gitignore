@@ -32,7 +32,7 @@ __pycache__/
 *.pyc
 .env
 .idea/
-
+uploads/
 
 dockerfile
 
