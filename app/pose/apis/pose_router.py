@@ -2,6 +2,7 @@ import cv2
 
 from fastapi import APIRouter
 
+from app.VideoStorage.minio_downloader import download_video_from_minio
 from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.error_code import ErrorCode
 from app.common.exceptions.status_code import StatusCode
@@ -13,7 +14,8 @@ router = APIRouter(prefix="/pose",tags=["Pose"])
 
 @router.post("/analyze", response_model=list[PoseAnalysisResponse])
 async def analyze_pose(request: PoseAnalysisRequest):
-    frame_result = analyze_frames(request.video_object_key)
+    local_video_path = download_video_from_minio(request.video_object_key)
+    frame_result = analyze_frames(local_video_path)
 
     frames = []
 
