@@ -1,26 +1,13 @@
-import os
 import json
-import google.generativeai as genai
-from dotenv import load_dotenv
+from google import genai
 
-load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+from app.core.config import settings
 
-
-def get_best_model():
-    """사용 가능한 모델 중 flash 모델을 찾아 반환"""
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods and 'flash' in m.name:
-            #print(f"선택된 모델: {m.name}")
-            return genai.GenerativeModel(m.name)
-    # 실패 시 기본 모델 반환
-    return genai.GenerativeModel('gemini-1.5-flash')
+client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
 def evaluate_interview_content(script: str, job_category: str):
     try:
-        model = get_best_model()  # 자동 모델 선택 호출
-
         prompt = f"""
         당신은 {job_category} 직무의 전문 면접관입니다. 지원자의 답변을 다음 JSON 형식으로만 엄격하게 출력하세요.
         다른 설명이나 마크다운 형식(```json 등)은 절대 붙이지 마세요.
@@ -37,7 +24,11 @@ def evaluate_interview_content(script: str, job_category: str):
         지원자 답변: {script}
         """
 
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt
+        )
+
         cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(cleaned_text)
 
