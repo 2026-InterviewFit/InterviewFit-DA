@@ -108,11 +108,20 @@ def download_video_from_minio(object_name: str, local_path: str | None = None) -
 
         try:
             s3.download_file(bucket_name, object_key, target_path)
-            logger.info("MinIO 다운로드 성공: bucket=%s, objectKey=%s", bucket_name, object_key)
+            logger.info(
+                "MinIO 다운로드 성공: bucket=%s, objectKey=%s",
+                bucket_name,
+                object_key,
+            )
             return target_path
 
         except Exception as e:
-            logger.warning("MinIO 다운로드 후보 실패: bucket=%s, objectKey=%s, error=%s", bucket_name, object_key, e)
+            logger.warning(
+                "MinIO 다운로드 후보 실패: bucket=%s, objectKey=%s, error=%s",
+                bucket_name,
+                object_key,
+                e,
+            )
             last_error = e
 
     raise RuntimeError(
