@@ -5,10 +5,8 @@ import librosa
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from faster_whisper import WhisperModel
 from . import ai_evaluator_service
-from ..infra.spring_client import send_to_spring_server
 from ..infra import s3_client
 
-# 로깅 및 모델 설정
 logger = logging.getLogger(__name__)
 
 print("무료 Whisper AI 모델을 로드하는 중입니다. 잠시만 기다려주세요...")
@@ -49,11 +47,15 @@ def analyze_silence_with_librosa(audio_path: str) -> dict:
         critical_silence_count = 0
         last_end_sec = 0.0
         for start, end in non_silent_intervals:
-            if (start / sr) - last_end_sec >= 3.0: critical_silence_count += 1
+            if (start / sr) - last_end_sec >= 3.0:
+                critical_silence_count += 1
             last_end_sec = end / sr
-        if total_duration - last_end_sec >= 3.0: critical_silence_count += 1
-        return {"total_silence_seconds": round(total_silence_seconds, 2),
-                "critical_silence_count": critical_silence_count}
+        if total_duration - last_end_sec >= 3.0:
+            critical_silence_count += 1
+        return {
+            "total_silence_seconds": round(total_silence_seconds, 2),
+            "critical_silence_count": critical_silence_count
+        }
     except Exception:
         return {"total_silence_seconds": 0.0, "critical_silence_count": 0}
 
@@ -67,17 +69,46 @@ def run_free_whisper_stt(audio_path: str) -> str:
         return "STT 변환 실패"
 
 
+# ✅ 추가: 발화 속도 평가 함수
+def get_pace_evaluation(chars_per_second: float) -> str:
+    if chars_per_second < 3.0:
+        return "너무 느림"
+    elif chars_per_second > 7.0:
+        return "너무 빠름"
+    return "적절함"
+
+
+# ✅ 추가: 발화 속도 피드백 함수
+def get_pace_feedback(chars_per_second: float) -> str:
+    if chars_per_second < 3.0:
+        return "발화 속도가 너무 느립니다. 좀 더 빠르게 말씀해보세요."
+    elif chars_per_second > 7.0:
+        return "발화 속도가 너무 빠릅니다. 좀 더 천천히 말씀해보세요."
+    return "발화 속도가 적절합니다."
+
+
 def analyze_speech_metrics(stt_text: str, duration_seconds: float, silence_report: dict) -> dict:
     padded_text = f" {stt_text} "
     filler_targets = ["음", "어", "그", "이제", "약간", "저"]
-    filler_counts = {word: padded_text.count(f" {word} ") + padded_text.count(f" {word},") for word in filler_targets}
+    filler_counts = {
+        word: padded_text.count(f" {word} ") + padded_text.count(f" {word},")
+        for word in filler_targets
+    }
     total_filler_count = sum(filler_counts.values())
     speech_rate_bps = len(stt_text.replace(" ", "")) / duration_seconds if duration_seconds > 0 else 0.0
 
     return {
         "text_script": stt_text,
-        "filler_word_analysis": {"details": filler_counts, "total_count": total_filler_count},
-        "speech_pace_analysis": {"characters_per_second": round(speech_rate_bps, 2)},
+        "filler_word_analysis": {
+            "details": filler_counts,
+            "total_count": total_filler_count
+        },
+        # ✅ 수정: evaluation, feedback 추가
+        "speech_pace_analysis": {
+            "characters_per_second": round(speech_rate_bps, 2),
+            "evaluation": get_pace_evaluation(speech_rate_bps),
+            "feedback": get_pace_feedback(speech_rate_bps),
+        },
         "silence_analysis": silence_report
     }
 
@@ -92,7 +123,8 @@ def process_interview_analysis(source_type: str, source_value: str, job_category
         # 1. 소스 준비 (유튜브, MinIO, 로컬 파일)
         if source_type == 'youtube':
             path = download_youtube_video(source_value, f"interview_{suffix}")
-            if not path: return None
+            if not path:
+                return None
         elif source_type == 'minio':
             bucket_name = os.getenv("MINIO_BUCKET")
             # 경로에서 버킷 이름이 포함되어 있으면 제거
@@ -107,31 +139,39 @@ def process_interview_analysis(source_type: str, source_value: str, job_category
             path = temp_video
         elif source_type == 'local':
             path = source_value
-            if not os.path.exists(path): return {"error": "로컬 파일을 찾을 수 없습니다."}
+            if not os.path.exists(path):
+                return {"error": "로컬 파일을 찾을 수 없습니다."}
         else:
             return {"error": "지원하지 않는 소스 타입입니다."}
 
         # 2. 분석 수행
         audio_success, duration = extract_audio_and_get_duration(path, temp_audio)
-        if not audio_success: return {"error": "오디오 추출 실패"}
+        if not audio_success:
+            return {"error": "오디오 추출 실패"}
 
         silence = analyze_silence_with_librosa(temp_audio)
         stt = run_free_whisper_stt(temp_audio)
         report = analyze_speech_metrics(stt, duration, silence)
 
         # 3. Gemini 평가 추가
-        report['ai_evaluation'] = ai_evaluator_service.evaluate_interview_content(stt, job_category)
+        ai_eval = ai_evaluator_service.evaluate_interview_content(stt, job_category)
+        report['ai_evaluation'] = ai_eval
+
+        # ✅ 수정: model_answer를 ai_evaluation 안에서 꺼내 최상위로 올림
+        report['model_answer'] = ai_eval.get('model_answer') if isinstance(ai_eval, dict) else None
+
         report['job_category'] = job_category
         report['interview_id'] = interview_id
 
-        # 4. 스프링 전송
-        send_to_spring_server(report)
+        # Spring이 직접 호출하는 구조 — FastAPI는 결과만 반환
         return report
 
     except Exception as e:
         logger.exception(f"분석 파이프라인 에러: {e}")
         return {"error": str(e)}
     finally:
-        # 5. 파일 정리 (로컬 원본 제외)
-        if os.path.exists(temp_audio): os.remove(temp_audio)
-        if source_type != 'local' and os.path.exists(path): os.remove(path)
+        # 4. 파일 정리 (로컬 원본 제외)
+        if os.path.exists(temp_audio):
+            os.remove(temp_audio)
+        if source_type != 'local' and os.path.exists(path):
+            os.remove(path)

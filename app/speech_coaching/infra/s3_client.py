@@ -14,6 +14,7 @@ def get_minio_client():
 
 def download_video_from_minio(object_name, local_path):
     s3 = get_minio_client()
+<<<<<<< Updated upstream
     bucket_name = os.getenv("MINIO_BUCKET")
     print(f"DEBUG: 현재 로드된 bucket_name: {bucket_name}")
     try:
@@ -22,3 +23,8 @@ def download_video_from_minio(object_name, local_path):
     except Exception as e:
         logger.error(f"MinIO 다운로드 실패: {e}")
         raise e
+=======
+    bucket_name = os.getenv("MINIO_BUCKET") # 예: interview-videos
+    s3.download_file(bucket_name, object_name, local_path)
+    return local_path
+>>>>>>> Stashed changes
