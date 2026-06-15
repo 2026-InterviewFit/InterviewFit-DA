@@ -1,4 +1,5 @@
 import os
+import subprocess
 import logging
 
 import librosa
@@ -35,26 +36,51 @@ def download_youtube_video(youtube_url: str, output_name: str) -> str:
 
 
 def extract_audio_and_get_duration(video_path: str, output_audio_path: str):
+    """
+    Chrome MediaRecorder가 만든 webm은 Duration: N/A로 잡히는 경우가 있어서
+    MoviePy VideoFileClip이 실패할 수 있다.
+
+    그래서 ffmpeg로 오디오를 직접 wav로 추출하고,
+    wav 파일 길이는 librosa로 계산한다.
+    """
     try:
-        video_clip = VideoFileClip(video_path)
-        duration_seconds = video_clip.duration
-
-        if video_clip.audio is None:
-            video_clip.close()
-            return False, 0.0
-
-        video_clip.audio.write_audiofile(
+        command = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            video_path,
+            "-vn",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             output_audio_path,
-            codec="pcm_s16le",
-            logger=None,
+        ]
+
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
 
-        video_clip.close()
+        if result.returncode != 0:
+            logger.error("ffmpeg 오디오 추출 실패: %s", result.stderr)
+            return False, 0.0
+
+        y, sr = librosa.load(output_audio_path, sr=None)
+        duration_seconds = len(y) / sr if sr else 0.0
+
+        if duration_seconds <= 0:
+            logger.error("오디오 길이가 0초입니다.")
+            return False, 0.0
 
         return True, duration_seconds
 
     except Exception as e:
-        logger.error(f"오디오 추출 실패: {e}")
+        logger.error("오디오 추출 실패: %s", e)
         return False, 0.0
 
 
