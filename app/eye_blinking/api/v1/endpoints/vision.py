@@ -100,7 +100,7 @@ def analyze_blinks_from_spring(request: EyeBlinkingAnalyzeRequest):
     1. MinIO objectKey
        - 실제 통합 흐름
        - FE → Spring /videos/upload → MinIO 저장 → videoUrl='videos/...' 반환
-       - Spring → FastAPI /api/v1/vision/blinks로 같은 videoUrl 전달
+       - Spring → FastAPI /apis/v1/vision/blinks로 같은 videoUrl 전달
        - FastAPI가 resolve_video_path()에서 MinIO 파일을 임시 다운로드
 
     2. 로컬 파일 경로
@@ -135,7 +135,7 @@ async def analyze_blinks_from_upload(video: UploadFile = File(...)):
     Swagger나 단독 테스트용 업로드 방식 API.
 
     최종 FE/Spring 통합에서는 /videos/upload로 MinIO에 저장한 뒤
-    /api/eye-blinking/analyze에 videoUrl을 넘기는 방식을 사용한다.
+    /apis/eye-blinking/analyze에 videoUrl을 넘기는 방식을 사용한다.
     이 API는 eye-blink 기능만 빠르게 검증할 때 남겨둔다.
     """
 

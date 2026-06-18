@@ -4,7 +4,7 @@ from app.followup.schemas.followup_schema import FollowUpRequest, FollowUpRespon
 from app.followup.services.followup_service import generate_follow_up_question
 
 
-router = APIRouter(prefix="/api/followup", tags=["FollowUp"])
+router = APIRouter(prefix="/apis/followup", tags=["FollowUp"])
 
 
 @router.post("/create", response_model=FollowUpResponse)
