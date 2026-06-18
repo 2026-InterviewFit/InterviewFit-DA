@@ -4,7 +4,7 @@ from app.question.schemas.question_schema import QuestionRequest, QuestionRespon
 
 from app.question.services.question_service import generate_first_question
 
-router = APIRouter(prefix="/api/question",tags=["Question"])
+router = APIRouter(prefix="/apis/question",tags=["Question"])
 
 
 @router.post("/create", response_model=QuestionResponse)

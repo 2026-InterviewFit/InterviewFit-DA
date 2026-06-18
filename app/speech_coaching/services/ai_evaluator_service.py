@@ -1,7 +1,10 @@
 import json
+import logging
 from google import genai
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
@@ -33,5 +36,5 @@ def evaluate_interview_content(script: str, job_category: str):
         return json.loads(cleaned_text)
 
     except Exception as e:
-        print(f"!!! 상세 에러 발생: {e}")
+        logger.error("Gemini 평가 중 에러 발생: %s", e)
         return {"error": str(e)}
