@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash-lite"
 
-    # 팀원 VideoStorage 코드와 eye-blink가 함께 사용할 MinIO 설정.
+    # 팀원 video_storage 코드와 eye-blink가 함께 사용할 MinIO 설정.
     # Local: localhost:9000 / Docker: minio:9000
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "minioadmin"

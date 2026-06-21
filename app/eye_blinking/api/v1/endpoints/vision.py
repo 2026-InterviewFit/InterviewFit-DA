@@ -3,7 +3,7 @@ import tempfile
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.VideoStorage.minio_downloader import resolve_video_path
+from app.video_storage.minio_downloader import resolve_video_path
 from app.eye_blinking.schemas.eye import (
     BlinkAnalysisResponse,
     EyeBlinkingAnalyzeRequest,
@@ -95,7 +95,7 @@ def analyze_blinks_from_spring(request: EyeBlinkingAnalyzeRequest):
     """
     Spring Boot에서 전달한 videoUrl을 받아 눈 깜빡임을 분석한다.
 
-    팀원 VideoStorage 흐름과 맞추기 위해 videoUrl은 두 형태를 모두 지원한다.
+    팀원 video_storage 흐름과 맞추기 위해 videoUrl은 두 형태를 모두 지원한다.
 
     1. MinIO objectKey
        - 실제 통합 흐름
