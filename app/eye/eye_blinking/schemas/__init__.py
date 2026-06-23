@@ -1,7 +1,13 @@
-from app.eye_blinking.schemas.eye import BlinkAnalysisResponse, EyeLandmark, EyeLandmarksResponse
+from app.eye.eye_blinking.schemas.eye_schema import (
+    BlinkAnalysisResponse,
+    EyeBlinkingAnalyzeRequest,
+    EyeLandmark,
+    EyeLandmarksResponse,
+)
 
 __all__ = [
+    "BlinkAnalysisResponse",
+    "EyeBlinkingAnalyzeRequest",
     "EyeLandmark",
     "EyeLandmarksResponse",
-    "BlinkAnalysisResponse",
 ]
