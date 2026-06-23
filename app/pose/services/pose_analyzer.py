@@ -10,7 +10,7 @@ def analyze_posture(shoulder_tilt, face_direction, timestamp):
 
     if shoulder_tilt is None:
         shoulder_status = str(ShoulderStatus.NOT_DETECTED)
-    elif abs(shoulder_tilt) <= SHOULDER_THRESHOLD:
+    elif shoulder_tilt <= SHOULDER_THRESHOLD:
         shoulder_status = str(ShoulderStatus.GOOD)
 
     if face_direction is None:

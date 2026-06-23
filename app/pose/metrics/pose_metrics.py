@@ -9,7 +9,7 @@ RIGHT_EYE = 263
 
 def calculate_shoulder_tilt(pose_landmarks):
     """
-    어깨 기울기 계산
+    어깨 기울기 계산 (degree)
     """
 
     if pose_landmarks is None:
@@ -20,24 +20,21 @@ def calculate_shoulder_tilt(pose_landmarks):
     left = landmarks[LEFT_SHOULDER]
     right = landmarks[RIGHT_SHOULDER]
 
-    dx = right.x - left.x
-    dy = right.y - left.y
+    # 어깨 라인의 각도
+    angle = math.degrees(math.atan2(
+        right.y - left.y,
+        right.x - left.x
+    ))
 
-    # 기울기 각도
-    angle = math.degrees(math.atan2(dy, dx))
-
-    # 수평 기준 보정
+    # 0~90 범위로 정규화
     tilt = abs(angle)
-
-    # 180 근처 보정
-    if tilt > 90:
-        tilt = 180 - tilt
+    tilt = min(tilt, 180 - tilt)
 
     return round(tilt, 2)
 
 def calculate_face_direction(face_landmarks):
     """
-    얼굴 정면 여부 간단 판별
+    얼굴 방향 분석 (yaw)
     """
 
     if not face_landmarks:
@@ -51,6 +48,12 @@ def calculate_face_direction(face_landmarks):
 
     eye_center_x = (left_eye.x + right_eye.x) / 2
 
-    diff = nose.x - eye_center_x
+    face_width = abs(right_eye.x - left_eye.x)
 
-    return round(diff, 4)
+    if face_width < 1e-6:
+        return None
+
+    # yaw (좌우)
+    yaw = (nose.x - eye_center_x) / face_width
+
+    return round(yaw, 2)
