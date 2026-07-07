@@ -12,6 +12,4 @@ def create_first_question(request: QuestionRequest):
         cover_letter=request.cover_letter
     )
 
-    return QuestionResponse(
-        questions=question_list
-    )
+    return QuestionResponse(questions=question_list)
