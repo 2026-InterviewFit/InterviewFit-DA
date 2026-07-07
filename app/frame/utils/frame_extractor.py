@@ -1,52 +1,72 @@
 import os
-import cv2
 import uuid
+import cv2
+
+DEFAULT_FRAME_INTERVAL = 30
+FRAME_OUTPUT_DIR = os.path.join("uploads", "frames")
 
 
-def extract_frames(video_path: str, frame_interval: int = 30):
+def extract_frames(
+    video_path: str,
+    frame_interval: int = DEFAULT_FRAME_INTERVAL
+) -> dict:
 
-    print("받은 경로:", video_path)
-    print("현재 폴더:", os.getcwd())
-    print("파일 존재:", os.path.exists(video_path))
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"영상 파일을 찾을 수 없습니다. : {video_path}")
 
-    cap = cv2.VideoCapture(video_path)
+    video_capture = cv2.VideoCapture(video_path)
 
-    if not cap.isOpened():
-        raise Exception("영상 파일을 열 수 없습니다.")
+    if not video_capture.isOpened():
+        raise ValueError("영상 파일을 열 수 없습니다.")
 
-    # 저장 폴더 생성
-    output_dir = os.path.join(
-        "uploads",
-        "frames",
-        str(uuid.uuid4())
-    )
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = create_output_directory()
 
-    frame_count = 0
+    frame_index = 0
     extracted_count = 0
-    saved_frame_paths = []
+    frame_paths = []
 
-    while cap.isOpened():
-        ret, frame = cap.read()
+    while video_capture.isOpened():
+        success, frame = video_capture.read()
 
-        if not ret:
+        if not success:
             break
 
-        if frame_count % frame_interval == 0:
-            frame_filename = f"frame_{extracted_count}.jpg"
-            frame_path = os.path.join(output_dir, frame_filename)
+        if frame_index % frame_interval == 0:
+            frame_path = save_frame(
+                frame,
+                output_dir,
+                extracted_count
+            )
 
-            cv2.imwrite(frame_path, frame)
-
-            saved_frame_paths.append(frame_path)
+            frame_paths.append(frame_path)
             extracted_count += 1
 
-        frame_count += 1
+        frame_index += 1
 
-    cap.release()
+    video_capture.release()
 
     return {
         "frameCount": extracted_count,
-        "framePaths": saved_frame_paths,
+        "framePaths": frame_paths,
         "outputDir": output_dir
     }
+
+
+def create_output_directory() -> str:
+    output_dir = os.path.join(
+        FRAME_OUTPUT_DIR,
+        str(uuid.uuid4())
+    )
+
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+
+def save_frame(frame, output_dir: str, index: int) -> str:
+    frame_path = os.path.join(
+        output_dir,
+        f"frame_{index}.jpg"
+    )
+
+    cv2.imwrite(frame_path, frame)
+    return frame_path

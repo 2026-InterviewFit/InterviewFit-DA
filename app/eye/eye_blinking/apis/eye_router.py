@@ -3,7 +3,7 @@ import tempfile
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.VideoStorage.minio_downloader import resolve_video_path
+from app.video_storage.minio_downloader import resolve_video_path
 from app.eye.eye_blinking.schemas.eye_schema import (
     BlinkAnalysisResponse,
     EyeBlinkingAnalyzeRequest,
