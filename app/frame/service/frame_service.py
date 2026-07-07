@@ -1,14 +1,11 @@
 from app.frame.utils.frame_extractor import extract_frames
 
 
-def analyze_frames(video_path: str):
-    result = extract_frames(video_path)
-
-    print(f"추출된 프레임 수: {result['frameCount']}")
-    print(f"프레임 저장 위치: {result['outputDir']}")
+def analyze_frames(video_path: str) -> dict:
+    frame_result = extract_frames(video_path)
 
     return {
-        "frameCount": result["frameCount"],
-        "framePaths": result["framePaths"],
-        "outputDir": result["outputDir"]
+        "frameCount": frame_result["frameCount"],
+        "framePaths": frame_result["framePaths"],
+        "outputDir": frame_result["outputDir"],
     }

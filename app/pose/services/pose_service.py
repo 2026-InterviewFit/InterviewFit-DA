@@ -1,5 +1,5 @@
 import cv2
-from app.VideoStorage.minio_downloader import download_video_from_minio
+from app.video_storage.minio_downloader import download_video_from_minio
 from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.error_code import ErrorCode
 from app.common.exceptions.status_code import StatusCode
