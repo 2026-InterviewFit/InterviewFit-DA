@@ -22,3 +22,6 @@ minio
 psycopg[binary]
 SQLAlchemy
 boto3>=1.34.0
+pillow
+pytesseract
+pdf2image

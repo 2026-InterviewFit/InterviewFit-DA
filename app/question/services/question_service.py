@@ -4,6 +4,7 @@ from google.genai import types
 from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.error_code import ErrorCode
 from app.common.exceptions.status_code import StatusCode
+from app.core.config import settings
 from app.core.gemini_client import question_client
 from app.question.prompts.question_prompts import create_question_prompt
 
@@ -39,11 +40,10 @@ def generate_first_question(count: int, job: str, cover_letter: str | None = Non
 
     try:
         response = question_client.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model=getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash-lite"),
             contents=contents,
             config=config
         )
-        print(response.text)
     except Exception:
         raise CustomException(
             status=StatusCode.INTERNAL_SERVER_ERROR,
