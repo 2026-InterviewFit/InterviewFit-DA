@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_router
 from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.exception_handler import custom_exception_handler
+from app.eye.eye_gaze.apis.gaze_router import router as gaze_router
+
 
 app = FastAPI(
     title="InterviewFit AI Server",
@@ -34,3 +36,5 @@ def root():
         "message": "InterviewFit AI Server is running",
         "docs": "/docs",
     }
+
+app.include_router(gaze_router)
