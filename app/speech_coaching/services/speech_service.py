@@ -1,119 +1,278 @@
 import os
-import yt_dlp
-import librosa
+import logging
+import subprocess
+import re
+from collections import Counter
 import numpy as np
-from moviepy.video.io.VideoFileClip import VideoFileClip
+import librosa
+import yt_dlp
 from faster_whisper import WhisperModel
 
-# 모델 로드
-print("무료 Whisper AI 모델을 로드하는 중입니다. 잠시만 기다려주세요...")
+from app.speech_coaching.services import ai_evaluator_service
+from app.speech_coaching.infra import s3_client
+from app.speech_coaching.schemas.speech_schema import (
+    SpeechReportResponse, AiEvaluation,
+    FillerWordAnalysis, RepeatedExpression, SpeechPaceAnalysis,
+    VolumeAnalysis, SilenceAnalysis,
+)
+from app.common.exceptions.custom_exception import CustomException
+from app.common.exceptions.error_code import ErrorCode
+from app.common.exceptions.status_code import StatusCode
+
+logger = logging.getLogger(__name__)
+
+# Whisper AI 모델 로드 (서버 시작 시 1회)
+logger.info("무료 Whisper AI 모델을 로드하는 중입니다...")
 model = WhisperModel("base", device="cpu", compute_type="float32")
-print("AI 모델 로드 완료!")
+logger.info("AI 모델 로드 완료!")
 
 
-def download_youtube_video(youtube_url: str, output_name: str = "interview") -> str:
+# 유튜브 영상 다운로드
+def download_youtube_video(youtube_url: str, output_name: str) -> str:
     try:
-        print(f"\n유튜브 영상 다운로드 시작: {youtube_url}")
-        ydl_opts = {'format': 'best[ext=mp4]/best', 'outtmpl': f'{output_name}.%(ext)s', 'quiet': True}
+        ydl_opts = {
+            "format": "best[ext=mp4]/best",
+            "outtmpl": f"{output_name}.%(ext)s",
+            "quiet": True,
+        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([youtube_url])
-        expected_filename = f"{output_name}.mp4"
-        if os.path.exists(expected_filename):
-            print(f"유튜브 영상 다운로드 성공: {expected_filename}")
-            return expected_filename
-        return expected_filename
+        return f"{output_name}.mp4"
     except Exception as e:
-        print(f"유튜브 다운로드 실패: {str(e)}")
+        logger.error("유튜브 다운로드 실패: %s", e)
         return ""
 
 
+# 영상에서 오디오 추출 + 길이 계산
 def extract_audio_and_get_duration(video_path: str, output_audio_path: str):
-    if not os.path.exists(video_path):
-        print(f"에러: {video_path} 경로에 영상 파일이 없습니다!")
-        return False, 0.0
     try:
-        print(f"영상을 분석하는 중: {video_path}")
-        video_clip = VideoFileClip(video_path)
-        duration_seconds = video_clip.duration
-        print(f"영상 총 길이 확인됨: {duration_seconds:.2f}초")
-        print(f"오디오 스트림 인코딩 및 변환 중 -> {output_audio_path}")
-        video_clip.audio.write_audiofile(output_audio_path, codec='pcm_s16le', logger=None)
-        video_clip.close()
+        command = [
+            "ffmpeg", "-y", "-i", video_path, "-vn",
+            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+            output_audio_path,
+        ]
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode != 0:
+            logger.error("ffmpeg 오디오 추출 실패: %s", result.stderr)
+            return False, 0.0
+
+        y, sr = librosa.load(output_audio_path, sr=None)
+        duration_seconds = len(y) / sr if sr else 0.0
         return True, duration_seconds
     except Exception as e:
-        print(f"오디오 추출 및 시간 측정 실패: {str(e)}")
+        logger.error("오디오 추출 실패: %s", e)
         return False, 0.0
 
 
-def analyze_silence_with_librosa(audio_path: str) -> dict:
+# 음량(데시벨)·음량 안정성·침묵 구간·침묵 비율 분석
+def analyze_audio_metrics(audio_path: str) -> dict:
     try:
         y, sr = librosa.load(audio_path, sr=None)
+        total_duration = len(y) / sr if sr else 0.0
+
+        # 음량 분석
+        rms = librosa.feature.rms(y=y)[0]
+        rms_db = librosa.amplitude_to_db(rms, ref=1.0)
+        volume_db_mean = float(np.mean(rms_db)) if len(rms_db) else 0.0
+        volume_db_std = float(np.std(rms_db)) if len(rms_db) else 0.0
+
+        # 침묵 분석
         non_silent_intervals = librosa.effects.split(y, top_db=30)
-        total_duration = len(y) / sr
-        active_duration = sum([end - start for start, end in non_silent_intervals]) / sr
+        active_duration = sum([end - start for start, end in non_silent_intervals]) / sr if sr else 0.0
         total_silence_seconds = max(0.0, total_duration - active_duration)
+        pause_rate_percent = (total_silence_seconds / total_duration * 100) if total_duration > 0 else 0.0
+
+        # 3초 이상 끊긴 구간(치명적 침묵) 카운트
         critical_silence_count = 0
         last_end_sec = 0.0
         for start, end in non_silent_intervals:
-            if (start / sr) - last_end_sec >= 3.0: critical_silence_count += 1
+            if (start / sr) - last_end_sec >= 3.0:
+                critical_silence_count += 1
             last_end_sec = end / sr
-        if total_duration - last_end_sec >= 3.0: critical_silence_count += 1
-        return {"total_silence_seconds": round(total_silence_seconds, 2),
-                "critical_silence_count": critical_silence_count}
+        if total_duration - last_end_sec >= 3.0:
+            critical_silence_count += 1
+
+        return {
+            "volume_db_mean": round(volume_db_mean, 2),
+            "volume_db_std": round(volume_db_std, 2),
+            "total_silence_seconds": round(total_silence_seconds, 2),
+            "pause_rate_percent": round(pause_rate_percent, 2),
+            "critical_silence_count": critical_silence_count,
+        }
     except Exception as e:
-        print(f"리브로사 음성 신호 분석 실패: {str(e)}")
-        return {"total_silence_seconds": 0.0, "critical_silence_count": 0}
+        logger.error("음량/침묵 분석 실패: %s", e)
+        return {
+            "volume_db_mean": 0.0, "volume_db_std": 0.0,
+            "total_silence_seconds": 0.0, "pause_rate_percent": 0.0,
+            "critical_silence_count": 0,
+        }
 
 
+# 연속으로 같은 단어가 반복되는 패턴 탐지 (예: "미안, 미안, 미안")
+def find_consecutive_repeats(text: str, min_repeat: int = 2) -> list[dict]:
+    pattern = re.compile(r"([가-힣A-Za-z]+)(?:[,]?\s+\1\b)+")
+    results = []
+    for m in pattern.finditer(text):
+        word = m.group(1)
+        count = len(re.findall(re.escape(word), m.group(0)))
+        if count >= min_repeat:
+            results.append({"expression": word, "count": count})
+    return results
+
+
+# 고정 습관어 목록 밖의 반복 표현 탐지 (연속 반복 + 불용어 제외 빈도)
+def detect_repeated_expressions(stt_text: str, min_length: int = 2, min_count: int = 2, top_n: int = 5) -> list[dict]:
+    try:
+        # 조사/접속사/대명사 등 의미 없는 고빈도 단어 제외
+        stopwords = {
+            "그리고", "그래서", "그러나", "하지만", "그런데", "또한", "근데",
+            "제가", "저는", "나는", "우리", "이것", "저것", "그것",
+            "이런", "저런", "그런", "것", "수", "등", "때", "좀", "막","같습니다",
+        }
+        filler_targets = {"음", "어", "그", "이제", "약간", "저"}
+
+        # 1. 연속 반복(말 더듬 신호) 우선 탐지
+        consecutive = find_consecutive_repeats(stt_text, min_repeat=min_count)
+        consecutive_words = {item["expression"] for item in consecutive}
+
+        # 2. 불용어/필러/연속반복 중복 제외한 전체 빈도
+        words = re.findall(r"[가-힣A-Za-z]+", stt_text)
+        candidates = [
+            w for w in words
+            if w not in filler_targets
+            and w not in stopwords
+            and w not in consecutive_words
+            and len(w) >= min_length
+        ]
+        counter = Counter(candidates)
+        frequent = [
+            {"expression": word, "count": count}
+            for word, count in counter.most_common()
+            if count >= min_count
+        ]
+
+        return (consecutive + frequent)[:top_n]
+    except Exception as e:
+        logger.error("반복 표현 탐지 실패: %s", e)
+        return []
+
+
+# Whisper STT 변환
 def run_free_whisper_stt(audio_path: str) -> str:
     try:
-        segments, info = model.transcribe(audio_path, beam_size=5, language="ko")
-        return " ".join([s.text for s in segments]).strip()
+        segments, _ = model.transcribe(audio_path, beam_size=5, language="ko")
+        return " ".join([segment.text for segment in segments]).strip()
     except Exception as e:
-        return f"STT 변환 실패: {str(e)}"
+        logger.error("STT 변환 실패: %s", e)
+        return "STT 변환 실패"
 
 
-def analyze_speech_metrics(stt_text: str, duration_seconds: float, silence_report: dict) -> dict:
+# 필러워드 + 반복 표현 + 말하기 속도 종합 계산
+def analyze_speech_metrics(stt_text: str, duration_seconds: float) -> dict:
     padded_text = f" {stt_text} "
     filler_targets = ["음", "어", "그", "이제", "약간", "저"]
     filler_counts = {word: padded_text.count(f" {word} ") + padded_text.count(f" {word},") for word in filler_targets}
     total_filler_count = sum(filler_counts.values())
-    speech_rate_bps = len(stt_text.replace(" ", "")) / duration_seconds if duration_seconds > 0 else 0.0
 
-    if speech_rate_bps < 2.5:
-        pace_eval, pace_feedback = "너무 느림", "답변 속도가 느려 지루한 인상을 줄 수 있습니다."
-    elif 2.5 <= speech_rate_bps <= 4.2:
-        pace_eval, pace_feedback = "적절함", "가장 안정적이고 신뢰감을 주는 속도입니다."
-    else:
-        pace_eval, pace_feedback = "너무 빠름", "답변 속도가 너무 빨라 면접관이 내용을 놓칠 우려가 있습니다."
+    cps = len(stt_text.replace(" ", "")) / duration_seconds if duration_seconds > 0 else 0.0
+    pace_eval = "적절함"
+    if cps < 2.0:
+        pace_eval = "너무 느림"
+    elif cps > 6.0:
+        pace_eval = "너무 빠름"
 
     return {
         "text_script": stt_text,
         "filler_word_analysis": {"details": filler_counts, "total_count": total_filler_count},
-        "speech_pace_analysis": {"evaluation": pace_eval, "feedback": pace_feedback,
-                                 "characters_per_second": round(speech_rate_bps, 2)},
-        "silence_analysis": silence_report
+        "repeated_expressions": detect_repeated_expressions(stt_text),
+        "speech_pace_analysis": {
+            "evaluation": pace_eval,
+            "feedback": f"초당 {round(cps, 2)}자 속도입니다.",
+            "characters_per_second": round(cps, 2),
+        },
     }
 
 
-def process_interview_analysis(youtube_url: str):
-    temp_video = "interview.mp4"
-    temp_audio = "extracted_voice.wav"
+# 전체 분석 파이프라인 (영상 확보 → STT/음량/침묵 분석 → Gemini 평가 → 응답 생성)
+def process_interview_analysis(source_type: str, source_value: str, job_category: str, interview_id: int):
+    suffix = os.urandom(4).hex()
+    temp_video = f"temp_video_{suffix}.mp4"
+    temp_audio = f"temp_audio_{suffix}.wav"
+    video_path = ""
 
-    path = download_youtube_video(youtube_url, "interview")
-    if not path: return None
+    try:
+        # 1. 소스 타입별 영상 확보
+        if source_type == "youtube":
+            video_path = download_youtube_video(source_value, f"interview_{suffix}")
+        elif source_type == "minio":
+            video_path = s3_client.download_video_from_minio(source_value, temp_video)
+        elif source_type == "local":
+            video_path = source_value
+        else:
+            raise CustomException(
+                status=StatusCode.BAD_REQUEST,
+                code=ErrorCode.INVALID_SOURCE_TYPE,
+                message=f"지원하지 않는 source_type입니다: {source_type}"
+            )
 
-    audio_success, duration = extract_audio_and_get_duration(path, temp_audio)
-    if not audio_success: return None
+        if not video_path or not os.path.exists(video_path):
+            raise CustomException(
+                status=StatusCode.BAD_REQUEST,
+                code=ErrorCode.VIDEO_DOWNLOAD_FAILED,
+                message="영상을 확보하지 못했습니다. source_value를 확인해주세요."
+            )
 
-    print("\nLibrosa 음성 파형 정적 탐지 가동...")
-    silence = analyze_silence_with_librosa(temp_audio)
-    print("\n인공지능 자막 대본 추출 엔진 가동...")
-    stt = run_free_whisper_stt(temp_audio)
-    print("\n데이터 명세 연산 시작...")
-    report = analyze_speech_metrics(stt, duration, silence)
+        # 2. 분석 파이프라인
+        extracted, duration = extract_audio_and_get_duration(video_path, temp_audio)
+        if not extracted:
+            raise CustomException(
+                status=StatusCode.INTERNAL_SERVER_ERROR,
+                code=ErrorCode.AUDIO_EXTRACTION_FAILED,
+                message="오디오 추출에 실패했습니다."
+            )
 
-    if os.path.exists(temp_audio): os.remove(temp_audio); print("소리파일제거")
-    if os.path.exists(path): os.remove(path); print("시스템 하드디스크 임시 휘발성 파일 자동 청소 완료!")
+        audio_metrics = analyze_audio_metrics(temp_audio)
+        stt_text = run_free_whisper_stt(temp_audio)
+        metrics = analyze_speech_metrics(stt_text, duration)
 
-    return report
+        # 3. Gemini 평가
+        ai_res = ai_evaluator_service.evaluate_interview_content(stt_text, job_category)
+        if isinstance(ai_res, dict) and "error" in ai_res:
+            raise CustomException(
+                status=StatusCode.INTERNAL_SERVER_ERROR,
+                code=ErrorCode.AI_EVALUATION_FAILED,
+                message=ai_res["error"]
+            )
+
+        # 4. 스키마 매핑 및 반환
+        return SpeechReportResponse(
+            text_script=metrics["text_script"],
+            filler_word_analysis=FillerWordAnalysis(**metrics["filler_word_analysis"]),
+            repeated_expressions=[RepeatedExpression(**r) for r in metrics["repeated_expressions"]],
+            speech_pace_analysis=SpeechPaceAnalysis(**metrics["speech_pace_analysis"]),
+            volume_analysis=VolumeAnalysis(
+                volume_db_mean=audio_metrics["volume_db_mean"],
+                volume_db_std=audio_metrics["volume_db_std"],
+            ),
+            silence_analysis=SilenceAnalysis(
+                total_silence_seconds=audio_metrics["total_silence_seconds"],
+                pause_rate_percent=audio_metrics["pause_rate_percent"],
+                critical_silence_count=audio_metrics["critical_silence_count"],
+            ),
+            ai_evaluation=AiEvaluation(**ai_res),
+            model_answer=ai_res.get("model_answer", ""),
+            job_category=job_category,
+            interview_id=interview_id
+        )
+    except CustomException:
+        raise
+    except Exception as e:
+        logger.exception("분석 파이프라인 전체 에러")
+        raise CustomException(
+            status=StatusCode.INTERNAL_SERVER_ERROR,
+            code=ErrorCode.SPEECH_ANALYSIS_FAILED,
+            message=str(e)
+        )
+    finally:
+        if os.path.exists(temp_audio): os.remove(temp_audio)
+        if source_type != "local" and video_path and os.path.exists(video_path): os.remove(video_path)
