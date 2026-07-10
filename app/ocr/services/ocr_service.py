@@ -10,7 +10,6 @@ async def extract_text(file: UploadFile) -> str | None:
     try:
         file_bytes = await read_bytes(file)
 
-        # PDF
         if is_pdf(file):
             images = to_images(file_bytes)
             if not images:
@@ -37,7 +36,7 @@ async def extract_text(file: UploadFile) -> str | None:
             return text
     except CustomException:
         raise
-    except Exception as e:
+    except Exception:
         raise CustomException(
             status=StatusCode.INTERNAL_SERVER_ERROR,
             code=ErrorCode.OCR_SERVER_ERROR,

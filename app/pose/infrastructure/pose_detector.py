@@ -26,8 +26,8 @@ class MediaPipeDetector:
         face_result = self.face_mesh.process(rgb)
 
         return {
-            "pose_landmarks": pose_result.pose_landmarks,
-            "face_landmarks": face_result.multi_face_landmarks
+            "pose_landmarks": getattr(pose_result, "pose_landmarks", None),
+            "face_landmarks": getattr(face_result, "multi_face_landmarks", None)
         }
 
     def close(self):

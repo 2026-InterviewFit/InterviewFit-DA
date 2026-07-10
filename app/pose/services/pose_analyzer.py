@@ -2,21 +2,21 @@ from app.pose.constants.pose_status import ShoulderStatus, FaceStatus
 from app.pose.schemas.pose_schema import PoseAnalysisResponse
 
 SHOULDER_THRESHOLD = 5
-FACE_THRESHOLD = 0.03
+FACE_THRESHOLD = 0.1
 
 def analyze_posture(shoulder_tilt, face_direction, timestamp):
-    shoulder_status = str(ShoulderStatus.BAD)
-    face_status = str(FaceStatus.BAD)
+    shoulder_status = ShoulderStatus.BAD.value
+    face_status = FaceStatus.BAD.value
 
     if shoulder_tilt is None:
-        shoulder_status = str(ShoulderStatus.NOT_DETECTED)
+        shoulder_status = ShoulderStatus.NOT_DETECTED.value
     elif shoulder_tilt <= SHOULDER_THRESHOLD:
-        shoulder_status = str(ShoulderStatus.GOOD)
+        shoulder_status = ShoulderStatus.GOOD.value
 
     if face_direction is None:
-        face_status = str(FaceStatus.NOT_DETECTED)
+        face_status = FaceStatus.NOT_DETECTED.value
     elif abs(face_direction) <= FACE_THRESHOLD:
-        face_status = str(FaceStatus.GOOD)
+        face_status = FaceStatus.GOOD.value
 
     return PoseAnalysisResponse(
         timestamp=timestamp,
