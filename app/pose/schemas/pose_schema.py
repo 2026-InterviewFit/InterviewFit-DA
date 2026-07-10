@@ -4,7 +4,7 @@ class PoseAnalysisRequest(BaseModel):
     video_object_key: str
 
 class PoseAnalysisResponse(BaseModel):
-    timestamp: int
+    timestamp: float
     shoulder_tilt: float | None = None
     face_direction: float | None = None
     shoulder_status: str
