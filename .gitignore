@@ -10,9 +10,6 @@ __pycache__/
 venv/
 env/
 
-# Environment Variables
-.env
-
 # IDE
 .idea/
 .vscode/
@@ -26,15 +23,9 @@ env/
 
 # Logs
 *.log
-.env
-.venv/
-__pycache__/
-*.pyc
-.env
-.idea/
+
 uploads/
 
-dockerfile
 test.mp4
 uploads/frames
 # archives

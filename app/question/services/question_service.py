@@ -9,7 +9,7 @@ from app.core.gemini_client import question_client
 from app.question.prompts.question_prompts import create_question_prompt
 from app.question.schemas.question_schema import QuestionValidation
 
-def generate_first_question(count: int, job: str, cover_letter: str | None = None):
+def generate_first_question(count: int, job: str, cover_letter: str, previous_questions: list[str] | None = None):
     if question_client is None:
         raise CustomException(
             status=StatusCode.INTERNAL_SERVER_ERROR,
@@ -26,7 +26,8 @@ def generate_first_question(count: int, job: str, cover_letter: str | None = Non
     system_prompt, user_prompt = create_question_prompt(
         count=count,
         job=job,
-        cover_letter=cover_letter
+        cover_letter=cover_letter,
+        previous_questions=previous_questions
     )
 
     contents = [

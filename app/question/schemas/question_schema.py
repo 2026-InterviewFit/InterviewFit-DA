@@ -3,12 +3,14 @@ from pydantic import BaseModel, Field, field_validator
 class QuestionRequest(BaseModel):
     count: int
     job: str
-    cover_letter: str | None = None
+    cover_letter: str
+    previous_questions: list[str] | None = None
 
 class QuestionResponse(BaseModel):
     questions: list[str]
 
 class QuestionValidation(BaseModel):
+    # LLM 응답 자체가 비어있는 경우 방지
     questions: list[str] = Field(..., min_length=1)
 
     @field_validator("questions")

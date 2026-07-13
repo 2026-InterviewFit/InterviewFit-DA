@@ -1,0 +1,17 @@
+.venv
+.git
+.gitignore
+__pycache__
+*.pyc
+.pytest_cache
+.idea
+.vscode
+.env
+
+models
+downloads
+temp
+cache
+
+.DS_Store
+Thumbs.db
