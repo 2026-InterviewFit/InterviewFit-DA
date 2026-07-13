@@ -6,6 +6,7 @@ from app.embedding.apis.embedding_router import router as embedding_router
 from app.question.apis.question_router import router as question_router
 from app.pose.apis.pose_router import router as pose_router
 from app.eye.eye_blinking.apis.eye_router import router as eye_router
+from app.eye.eye_gaze.apis.gaze_router import router as gaze_router
 from app.followup.apis.followup_router import router as followup_router
 from app.video_storage.video_router import video_router
 
@@ -45,6 +46,12 @@ api_router.include_router(
     eye_router,
     prefix="/eye-blinking",
     tags=["EyeBlinking"],
+)
+
+api_router.include_router(
+    gaze_router,
+    prefix="/eye-gaze",
+    tags=["EyeGaze"],
 )
 
 api_router.include_router(
