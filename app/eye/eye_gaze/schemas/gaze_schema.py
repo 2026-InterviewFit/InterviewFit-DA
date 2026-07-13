@@ -1,12 +1,12 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
 
 class GazeAnalyzeRequest(BaseModel):
     video_url: str
-    user_id: int
-    interview_id: int
+    user_id: Optional[int] = None
+    interview_id: Optional[int] = None
 
 
 class GazeTimestamp(BaseModel):
