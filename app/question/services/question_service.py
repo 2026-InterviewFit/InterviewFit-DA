@@ -1,14 +1,15 @@
 import json
-import re
 from google.genai import types
+
 from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.error_code import ErrorCode
 from app.common.exceptions.status_code import StatusCode
 from app.core.config import settings
 from app.core.gemini_client import question_client
 from app.question.prompts.question_prompts import create_question_prompt
+from app.question.schemas.question_schema import QuestionValidation
 
-def generate_first_question(count: int, job: str, cover_letter: str | None = None):
+def generate_first_question(count: int, job: str, cover_letter: str, previous_questions: list[str] | None = None):
     if question_client is None:
         raise CustomException(
             status=StatusCode.INTERNAL_SERVER_ERROR,
@@ -17,14 +18,16 @@ def generate_first_question(count: int, job: str, cover_letter: str | None = Non
         )
 
     config = types.GenerateContentConfig(
-        temperature=0.7,
+        temperature=0.3,
         max_output_tokens=1024,
+        response_mime_type="application/json",
     )
 
     system_prompt, user_prompt = create_question_prompt(
         count=count,
         job=job,
-        cover_letter=cover_letter
+        cover_letter=cover_letter,
+        previous_questions=previous_questions
     )
 
     contents = [
@@ -52,7 +55,7 @@ def generate_first_question(count: int, job: str, cover_letter: str | None = Non
         )
 
     try:
-        return safe_parse(response.text)
+        question_list = safe_parse(response.text)
     except ValueError:
         raise CustomException(
             status=StatusCode.INTERNAL_SERVER_ERROR,
@@ -60,14 +63,32 @@ def generate_first_question(count: int, job: str, cover_letter: str | None = Non
             message="질문 생성 결과를 파싱할 수 없습니다."
         )
 
+    # 요청한 개수만 사용
+    if len(question_list) > count:
+        question_list = question_list[:count]
+
+    # 부족한 경우만 실패 처리
+    if len(question_list) < count:
+        raise CustomException(
+            status=StatusCode.INTERNAL_SERVER_ERROR,
+            code=ErrorCode.INVALID_QUESTION_COUNT,
+            message="생성된 질문 개수가 부족합니다."
+        )
+
+    try:
+        validated = QuestionValidation(
+            questions=question_list
+        )
+        return validated.questions
+    except Exception as e:
+        raise CustomException(
+            status=StatusCode.INTERNAL_SERVER_ERROR,
+            code=ErrorCode.INVALID_QUESTION_VALIDATION,
+            message="질문 검증에 실패했습니다."
+        )
+
 def safe_parse(text: str):
     try:
-        text = text.strip()
-
-        match = re.search(r"\[.*?\]", text, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-
         return json.loads(text)
     except json.JSONDecodeError:
         raise ValueError("면접 질문 리스트를 찾을 수 없습니다.")

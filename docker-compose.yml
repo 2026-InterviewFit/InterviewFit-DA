@@ -1,0 +1,83 @@
+services:
+  fastapi:
+    build: .
+    container_name: interviewfit-fastapi
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - minio
+      - tei
+    networks:
+      - interview-network
+
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    container_name: interviewfit-tei
+    ports:
+      - "80:80"
+    command:
+      - "--model-id"
+      - "${EMBEDDING_MODEL_ID:-intfloat/multilingual-e5-small}"
+    volumes:
+      - tei_cache:/data/huggingface
+    networks:
+      - interview-network
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: interview-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-interview_fit}
+      POSTGRES_USER: ${POSTGRES_USER:-interview}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-interview1234}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - interview-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: interview-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - interview-network
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: interview-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin123}; do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done;
+      mc mb -p local/interview-videos;
+      mc anonymous set private local/interview-videos;
+      echo 'MinIO bucket created';
+      exit 0;
+      "
+    networks:
+      - interview-network
+
+volumes:
+  postgres_data:
+  minio_data:
+  tei_cache:
+
+networks:
+  interview-network:
+    driver: bridge

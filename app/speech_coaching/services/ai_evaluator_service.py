@@ -14,6 +14,7 @@ def evaluate_interview_content(script: str, job_category: str):
         prompt = f"""
         당신은 {job_category} 직무의 전문 면접관입니다. 지원자의 답변을 다음 JSON 형식으로만 엄격하게 출력하세요.
         다른 설명이나 마크다운 형식(```json 등)은 절대 붙이지 마세요.
+        star_score 각 항목 0~10점 사이 정수로 평가하세요.
 
         필수 JSON 포맷:
         {{
