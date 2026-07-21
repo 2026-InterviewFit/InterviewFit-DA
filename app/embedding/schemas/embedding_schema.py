@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 
 class CoverLetterEmbeddingRequest(BaseModel):
-    text: str
+    contents: list[str]
 
 class CoverLetterEmbeddingResponse(BaseModel):
-    embedding: list[float]
+    embeddings: list[list[float]]
