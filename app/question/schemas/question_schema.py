@@ -1,16 +1,28 @@
 from pydantic import BaseModel, Field, field_validator
 
+class StarDto(BaseModel):
+    situation: str
+    task: str
+    action: str
+    result: str
+
+class CoverLetterQuestionAnalysisDto2(BaseModel):
+    question_number: int
+    summary: str
+    star: StarDto = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    importance_score: float | None = None
+
 class QuestionRequest(BaseModel):
     count: int
     job: str
-    cover_letter: str
+    analyses: list[CoverLetterQuestionAnalysisDto2] = Field(default_factory=list)
     previous_questions: list[str] | None = None
 
 class QuestionResponse(BaseModel):
-    questions: list[str]
-
-class QuestionValidation(BaseModel):
-    # LLM 응답 자체가 비어있는 경우 방지
     questions: list[str] = Field(..., min_length=1)
 
     @field_validator("questions")

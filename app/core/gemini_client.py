@@ -15,5 +15,6 @@ def create_gemini_client():
 
 
 # 도메인별 클라이언트 분리
+coverletter_client = create_gemini_client()
 question_client = create_gemini_client()
 followup_client = create_gemini_client()

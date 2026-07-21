@@ -7,5 +7,4 @@ router = APIRouter()
 
 @router.post("/coverletter", response_model=CoverLetterEmbeddingResponse)
 async def embedding(request: CoverLetterEmbeddingRequest):
-    letter_embedding = await create_embedding(text=request.text)
-    return CoverLetterEmbeddingResponse(embedding=letter_embedding)
+    return await create_embedding(contents=request.contents)
