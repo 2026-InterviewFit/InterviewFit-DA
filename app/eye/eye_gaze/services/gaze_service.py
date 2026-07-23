@@ -195,6 +195,34 @@ def _classify_gaze(
     return "CENTER"
 
 
+def _calculate_deviation(
+    horizontal_ratio: float,
+    vertical_ratio: float,
+) -> float:
+    """
+    정면(0.5, 0.5)에서 얼마나 벗어났는지 0~1 범위로 계산한다.
+    """
+
+    horizontal_deviation = abs(
+        horizontal_ratio - 0.5
+    ) * 2.0
+
+    vertical_deviation = abs(
+        vertical_ratio - 0.5
+    ) * 2.0
+
+    return float(
+        np.clip(
+            max(
+                horizontal_deviation,
+                vertical_deviation,
+            ),
+            0.0,
+            1.0,
+        )
+    )
+
+
 def _calculate_score(
     center_ratio: float,
     face_detection_ratio: float,
@@ -243,6 +271,67 @@ def _build_evaluation(
     return (
         "시선 이탈이 자주 발생했습니다. "
         "답변 중 카메라를 지속적으로 바라보는 연습이 필요합니다."
+    )
+
+
+def _append_bad_log(
+    bad_logs: List[Dict],
+    start_frame: int,
+    end_frame: int,
+    fps: float,
+    direction: str,
+    deviations: List[float],
+) -> None:
+    """
+    하나의 연속된 시선 이탈 이벤트를 bad_logs에 저장한다.
+    """
+
+    start_time = (
+        start_frame / fps
+        if fps > 0
+        else 0.0
+    )
+
+    end_time = (
+        end_frame / fps
+        if fps > 0
+        else start_time
+    )
+
+    duration = max(
+        0.0,
+        end_time - start_time,
+    )
+
+    average_deviation = (
+        float(
+            np.mean(
+                deviations
+            )
+        )
+        if deviations
+        else 0.0
+    )
+
+    bad_logs.append(
+        {
+            "timestamp": round(
+                max(
+                    0.0,
+                    start_time,
+                ),
+                2,
+            ),
+            "duration": round(
+                duration,
+                2,
+            ),
+            "direction": direction,
+            "deviation": round(
+                average_deviation,
+                4,
+            ),
+        }
     )
 
 
@@ -296,11 +385,13 @@ def analyze_gaze_from_video(
     }
 
     gaze_away_count = 0
-    gaze_away_timestamps = []
+    bad_logs: List[Dict] = []
 
     consecutive_away_frames = 0
     is_away_event = False
     current_away_direction = None
+    current_away_start_frame = None
+    current_away_deviations: List[float] = []
 
     ear_history: List[float] = []
     horizontal_ratio_history: List[float] = []
@@ -347,11 +438,30 @@ def analyze_gaze_from_video(
                 )
 
                 if not results.multi_face_landmarks:
+
+                    if (
+                        is_away_event
+                        and current_away_start_frame
+                        is not None
+                        and current_away_direction
+                        is not None
+                    ):
+                        _append_bad_log(
+                            bad_logs,
+                            current_away_start_frame,
+                            current_frame_index,
+                            fps,
+                            current_away_direction,
+                            current_away_deviations,
+                        )
+
                     no_face_frames += 1
 
                     consecutive_away_frames = 0
                     is_away_event = False
                     current_away_direction = None
+                    current_away_start_frame = None
+                    current_away_deviations = []
 
                     continue
 
@@ -376,11 +486,30 @@ def analyze_gaze_from_video(
                 )
 
                 if average_ear < EAR_THRESHOLD:
+
+                    if (
+                        is_away_event
+                        and current_away_start_frame
+                        is not None
+                        and current_away_direction
+                        is not None
+                    ):
+                        _append_bad_log(
+                            bad_logs,
+                            current_away_start_frame,
+                            current_frame_index,
+                            fps,
+                            current_away_direction,
+                            current_away_deviations,
+                        )
+
                     closed_eye_frames += 1
 
                     consecutive_away_frames = 0
                     is_away_event = False
                     current_away_direction = None
+                    current_away_start_frame = None
+                    current_away_deviations = []
 
                     continue
 
@@ -496,14 +625,50 @@ def analyze_gaze_from_video(
                 gaze_detected_frames += 1
 
                 if direction != "CENTER":
+
+                    deviation = _calculate_deviation(
+                        horizontal_ratio,
+                        vertical_ratio,
+                    )
+
                     consecutive_away_frames += 1
+                    current_away_deviations.append(
+                        deviation
+                    )
 
                     if current_away_direction is None:
-                        current_away_direction = (
-                            direction
-                        )
+                        current_away_direction = direction
 
                     if (
+                        direction
+                        != current_away_direction
+                        and is_away_event
+                    ):
+
+                        if (
+                            current_away_start_frame
+                            is not None
+                        ):
+                            _append_bad_log(
+                                bad_logs,
+                                current_away_start_frame,
+                                current_frame_index,
+                                fps,
+                                current_away_direction,
+                                current_away_deviations,
+                            )
+
+                        gaze_away_count += 1
+
+                        current_away_direction = direction
+                        current_away_start_frame = (
+                            current_frame_index
+                        )
+                        current_away_deviations = [
+                            deviation
+                        ]
+
+                    elif (
                         direction
                         != current_away_direction
                     ):
@@ -519,7 +684,7 @@ def analyze_gaze_from_video(
                         gaze_away_count += 1
                         is_away_event = True
 
-                        event_start_frame = (
+                        current_away_start_frame = (
                             current_frame_index
                             - (
                                 GAZE_AWAY_CONSEC_FRAMES
@@ -528,31 +693,29 @@ def analyze_gaze_from_video(
                             * FRAME_INTERVAL
                         )
 
-                        timestamp = (
-                            event_start_frame / fps
-                            if fps > 0
-                            else 0.0
-                        )
-
-                        gaze_away_timestamps.append(
-                            {
-                                "timestamp": round(
-                                    max(
-                                        0.0,
-                                        timestamp,
-                                    ),
-                                    2,
-                                ),
-                                "direction": (
-                                    current_away_direction
-                                ),
-                            }
-                        )
-
                 else:
+
+                    if (
+                        is_away_event
+                        and current_away_start_frame
+                        is not None
+                        and current_away_direction
+                        is not None
+                    ):
+                        _append_bad_log(
+                            bad_logs,
+                            current_away_start_frame,
+                            current_frame_index,
+                            fps,
+                            current_away_direction,
+                            current_away_deviations,
+                        )
+
                     consecutive_away_frames = 0
                     is_away_event = False
                     current_away_direction = None
+                    current_away_start_frame = None
+                    current_away_deviations = []
 
     finally:
         cap.release()
@@ -560,6 +723,22 @@ def analyze_gaze_from_video(
     if frame_index == 0:
         raise ValueError(
             "분석할 수 있는 프레임이 없습니다."
+        )
+
+    if (
+        is_away_event
+        and current_away_start_frame
+        is not None
+        and current_away_direction
+        is not None
+    ):
+        _append_bad_log(
+            bad_logs,
+            current_away_start_frame,
+            frame_index,
+            fps,
+            current_away_direction,
+            current_away_deviations,
         )
 
     duration_seconds = (
@@ -587,6 +766,17 @@ def analyze_gaze_from_video(
 
     face_detection_ratio = (
         face_detected_frames
+        / analyzed_frames
+        if analyzed_frames > 0
+        else 0.0
+    )
+
+    not_detected_count = (
+        no_face_frames
+    )
+
+    not_detected_ratio = (
+        no_face_frames
         / analyzed_frames
         if analyzed_frames > 0
         else 0.0
@@ -634,10 +824,12 @@ def analyze_gaze_from_video(
 
     return {
         "total_frames": frame_index,
+
         "fps": round(
             fps,
             2,
         ),
+
         "duration_seconds": round(
             duration_seconds,
             2,
@@ -646,6 +838,7 @@ def analyze_gaze_from_video(
         "face_detected_frames": (
             face_detected_frames
         ),
+
         "gaze_detected_frames": (
             gaze_detected_frames
         ),
@@ -653,15 +846,19 @@ def analyze_gaze_from_video(
         "center_frames": (
             center_frames
         ),
+
         "left_frames": (
             direction_counts["LEFT"]
         ),
+
         "right_frames": (
             direction_counts["RIGHT"]
         ),
+
         "up_frames": (
             direction_counts["UP"]
         ),
+
         "down_frames": (
             direction_counts["DOWN"]
         ),
@@ -670,30 +867,45 @@ def analyze_gaze_from_video(
             center_ratio * 100,
             2,
         ),
+
         "gaze_away_ratio": round(
             gaze_away_ratio * 100,
             2,
         ),
+
         "gaze_away_count": (
             gaze_away_count
         ),
 
+        "not_detected_count": (
+            not_detected_count
+        ),
+
+        "not_detected_ratio": round(
+            not_detected_ratio * 100,
+            2,
+        ),
+
         "score": score,
+
         "evaluation": evaluation,
 
-        "gaze_away_timestamps": (
-            gaze_away_timestamps
+        "bad_logs": (
+            bad_logs
         ),
 
         "analyzed_frames": (
             analyzed_frames
         ),
+
         "no_face_frames": (
             no_face_frames
         ),
+
         "closed_eye_frames": (
             closed_eye_frames
         ),
+
         "face_detection_ratio": round(
             face_detection_ratio * 100,
             2,
@@ -703,10 +915,12 @@ def analyze_gaze_from_video(
             average_ear,
             4,
         ),
+
         "average_horizontal_ratio": round(
             average_horizontal_ratio,
             4,
         ),
+
         "average_vertical_ratio": round(
             average_vertical_ratio,
             4,
@@ -715,12 +929,15 @@ def analyze_gaze_from_video(
         "metadata_total_frames": (
             metadata_total_frames
         ),
+
         "frame_interval": (
             FRAME_INTERVAL
         ),
+
         "ear_threshold": (
             EAR_THRESHOLD
         ),
+
         "gaze_away_consec_frames": (
             GAZE_AWAY_CONSEC_FRAMES
         ),
