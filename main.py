@@ -5,8 +5,13 @@ from app.api import api_router
 from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.exception_handler import custom_exception_handler
 from app.eye.eye_gaze.apis.gaze_router import router as gaze_router
-from app.pt_interview.router.pt_document_router import (router as pt_document_router,)
 
+from app.pt_interview.router.pt_document_router import (
+    router as pt_document_router,
+)
+from app.pt_interview.router.pt_question_router import (
+    router as pt_question_router,
+)
 
 
 app = FastAPI(
@@ -27,8 +32,20 @@ app.add_middleware(
 # 통합 라우터 연결
 app.include_router(api_router)
 
+# 시선 분석 라우터
+app.include_router(gaze_router)
+
+# PT 발표자료 분석 라우터
+app.include_router(pt_document_router)
+
+# PT 예상 질문 생성 라우터
+app.include_router(pt_question_router)
+
 # 공통 예외 핸들러 등록
-app.add_exception_handler(CustomException, custom_exception_handler)
+app.add_exception_handler(
+    CustomException,
+    custom_exception_handler,
+)
 
 
 @app.get("/")
@@ -37,6 +54,3 @@ def root():
         "message": "InterviewFit AI Server is running",
         "docs": "/docs",
     }
-
-app.include_router(gaze_router)
-app.include_router(pt_document_router)

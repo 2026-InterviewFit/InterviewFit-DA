@@ -4,7 +4,10 @@ from pydantic import BaseModel, Field
 
 
 class PtDocumentAnalyzeRequest(BaseModel):
-    object_key: str = Field(..., description="MinIO에 저장된 발표자료 object key")
+    object_key: str = Field(
+        ...,
+        description="MinIO에 저장된 발표자료 object key",
+    )
 
 
 class PtSlideAnalyzeResult(BaseModel):
@@ -23,5 +26,7 @@ class PtDocumentAnalyzeResponse(BaseModel):
     file_type: str
 
     total_slides: int
+
+    summary: Optional[str] = None
 
     slides: List[PtSlideAnalyzeResult]
