@@ -10,5 +10,8 @@ async def analyze_interview(request: SpeechAnalyzeRequest):
         source_type=request.source_type,
         source_value=request.source_value,
         job_category=request.job_category,
-        interview_id=request.interview_id
+        interview_id=request.interview_id,
+        interview_answer_id=request.interview_answer_id,
+        question_id=request.question_id,
+        original_question=request.original_question
     )
