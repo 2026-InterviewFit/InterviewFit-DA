@@ -5,15 +5,14 @@ from typing import List
 from minio import Minio
 from pptx import Presentation
 from pypdf import PdfReader
+from dotenv import load_dotenv
 
 from app.pt_interview.schema.pt_document_schema import (
     PtDocumentAnalyzeResponse,
     PtSlideAnalyzeResult,
 )
-from dotenv import load_dotenv
 
 load_dotenv()
-
 
 class PtDocumentService:
 
