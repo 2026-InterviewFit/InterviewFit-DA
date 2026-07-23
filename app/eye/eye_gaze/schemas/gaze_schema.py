@@ -9,9 +9,11 @@ class GazeAnalyzeRequest(BaseModel):
     interview_id: Optional[int] = None
 
 
-class GazeTimestamp(BaseModel):
+class GazeBadLog(BaseModel):
     timestamp: float
-    direction: str
+    duration: Optional[float] = None
+    direction: Optional[str] = None
+    deviation: Optional[float] = None
 
 
 class GazeAnalysisResponse(BaseModel):
@@ -32,10 +34,13 @@ class GazeAnalysisResponse(BaseModel):
     gaze_away_ratio: float
     gaze_away_count: int
 
+    not_detected_count: int
+    not_detected_ratio: float
+
     score: float
     evaluation: str
 
-    gaze_away_timestamps: List[GazeTimestamp] = Field(
+    bad_logs: List[GazeBadLog] = Field(
         default_factory=list
     )
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.speech_coaching.apis.speech_router import router as speech_router
+#from app.speech_coaching.apis.speech_router import router as speech_router
 from app.ocr.apis.ocr_router import router as ocr_router
 from app.embedding.apis.embedding_router import router as embedding_router
 from app.coverletter.apis.coverletter_router import router as coverletter_router
@@ -13,11 +13,11 @@ from app.video_storage.video_router import video_router
 
 api_router = APIRouter(prefix="/apis")
 
-api_router.include_router(
-    speech_router,
-    prefix="/speech",
-    tags=["Speech"],
-)
+#api_router.include_router(
+   # speech_router,
+  #  prefix="/speech",
+ #   tags=["Speech"],
+#)
 
 api_router.include_router(
     pose_router,
