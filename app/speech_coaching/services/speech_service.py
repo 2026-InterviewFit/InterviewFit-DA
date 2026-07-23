@@ -3,17 +3,16 @@ import logging
 import subprocess
 import re
 from collections import Counter
-import numpy as np
 import librosa
 import yt_dlp
 from faster_whisper import WhisperModel
-
+from typing import Optional
 from app.speech_coaching.services import ai_evaluator_service
 from app.speech_coaching.infra import s3_client
 from app.speech_coaching.schemas.speech_schema import (
     SpeechReportResponse, AiEvaluation,
     FillerWordAnalysis, RepeatedExpression, SpeechPaceAnalysis,
-    VolumeAnalysis, SilenceAnalysis,
+    SilenceAnalysis,
 )
 from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.error_code import ErrorCode
@@ -64,17 +63,11 @@ def extract_audio_and_get_duration(video_path: str, output_audio_path: str):
         return False, 0.0
 
 
-# 음량(데시벨)·음량 안정성·침묵 구간·침묵 비율 분석
+# 침묵 구간 및 침묵 비율 분석 (음량 분석 제외됨)
 def analyze_audio_metrics(audio_path: str) -> dict:
     try:
         y, sr = librosa.load(audio_path, sr=None)
         total_duration = len(y) / sr if sr else 0.0
-
-        # 음량 분석
-        rms = librosa.feature.rms(y=y)[0]
-        rms_db = librosa.amplitude_to_db(rms, ref=1.0)
-        volume_db_mean = float(np.mean(rms_db)) if len(rms_db) else 0.0
-        volume_db_std = float(np.std(rms_db)) if len(rms_db) else 0.0
 
         # 침묵 분석
         non_silent_intervals = librosa.effects.split(y, top_db=30)
@@ -93,22 +86,20 @@ def analyze_audio_metrics(audio_path: str) -> dict:
             critical_silence_count += 1
 
         return {
-            "volume_db_mean": round(volume_db_mean, 2),
-            "volume_db_std": round(volume_db_std, 2),
             "total_silence_seconds": round(total_silence_seconds, 2),
             "pause_rate_percent": round(pause_rate_percent, 2),
             "critical_silence_count": critical_silence_count,
         }
     except Exception as e:
-        logger.error("음량/침묵 분석 실패: %s", e)
+        logger.error("침묵 분석 실패: %s", e)
         return {
-            "volume_db_mean": 0.0, "volume_db_std": 0.0,
-            "total_silence_seconds": 0.0, "pause_rate_percent": 0.0,
+            "total_silence_seconds": 0.0,
+            "pause_rate_percent": 0.0,
             "critical_silence_count": 0,
         }
 
 
-# 연속으로 같은 단어가 반복되는 패턴 탐지 (예: "미안, 미안, 미안")
+# 연속으로 같은 단어가 반복되는 패턴 탐지
 def find_consecutive_repeats(text: str, min_repeat: int = 2) -> list[dict]:
     pattern = re.compile(r"([가-힣A-Za-z]+)(?:[,]?\s+\1\b)+")
     results = []
@@ -120,22 +111,19 @@ def find_consecutive_repeats(text: str, min_repeat: int = 2) -> list[dict]:
     return results
 
 
-# 고정 습관어 목록 밖의 반복 표현 탐지 (연속 반복 + 불용어 제외 빈도)
+# 반복 표현 탐지
 def detect_repeated_expressions(stt_text: str, min_length: int = 2, min_count: int = 2, top_n: int = 5) -> list[dict]:
     try:
-        # 조사/접속사/대명사 등 의미 없는 고빈도 단어 제외
         stopwords = {
             "그리고", "그래서", "그러나", "하지만", "그런데", "또한", "근데",
             "제가", "저는", "나는", "우리", "이것", "저것", "그것",
-            "이런", "저런", "그런", "것", "수", "등", "때", "좀", "막","같습니다",
+            "이런", "저런", "그런", "것", "수", "등", "때", "좀", "막", "같습니다",
         }
         filler_targets = {"음", "어", "그", "이제", "약간", "저"}
 
-        # 1. 연속 반복(말 더듬 신호) 우선 탐지
         consecutive = find_consecutive_repeats(stt_text, min_repeat=min_count)
         consecutive_words = {item["expression"] for item in consecutive}
 
-        # 2. 불용어/필러/연속반복 중복 제외한 전체 빈도
         words = re.findall(r"[가-힣A-Za-z]+", stt_text)
         candidates = [
             w for w in words
@@ -167,7 +155,7 @@ def run_free_whisper_stt(audio_path: str) -> str:
         return "STT 변환 실패"
 
 
-# 필러워드 + 반복 표현 + 말하기 속도 종합 계산
+# 스피치 지표 종합 계산
 def analyze_speech_metrics(stt_text: str, duration_seconds: float) -> dict:
     padded_text = f" {stt_text} "
     filler_targets = ["음", "어", "그", "이제", "약간", "저"]
@@ -183,6 +171,7 @@ def analyze_speech_metrics(stt_text: str, duration_seconds: float) -> dict:
 
     return {
         "text_script": stt_text,
+        "total_filler_count": total_filler_count,
         "filler_word_analysis": {"details": filler_counts, "total_count": total_filler_count},
         "repeated_expressions": detect_repeated_expressions(stt_text),
         "speech_pace_analysis": {
@@ -193,8 +182,16 @@ def analyze_speech_metrics(stt_text: str, duration_seconds: float) -> dict:
     }
 
 
-# 전체 분석 파이프라인 (영상 확보 → STT/음량/침묵 분석 → Gemini 평가 → 응답 생성)
-def process_interview_analysis(source_type: str, source_value: str, job_category: str, interview_id: int):
+# 전체 분석 파이프라인 (답변별 식별자 포함, 음량 분석 제외)
+def process_interview_analysis(
+    source_type: str,
+    source_value: str,
+    job_category: str,
+    interview_id: int,
+    interview_answer_id: Optional[int] = None,
+    question_id: Optional[int] = None,
+    original_question: Optional[str] = None
+):
     suffix = os.urandom(4).hex()
     temp_video = f"temp_video_{suffix}.mp4"
     temp_audio = f"temp_audio_{suffix}.wav"
@@ -244,25 +241,24 @@ def process_interview_analysis(source_type: str, source_value: str, job_category
                 message=ai_res["error"]
             )
 
-        # 4. 스키마 매핑 및 반환
+        # 4. 음량 분석을 제외한 응답 스키마 매핑 및 반환
         return SpeechReportResponse(
+            interview_id=interview_id,
+            interview_answer_id=interview_answer_id,
+            question_id=question_id,
+            original_question=original_question,
+            job_category=job_category,
             text_script=metrics["text_script"],
             filler_word_analysis=FillerWordAnalysis(**metrics["filler_word_analysis"]),
             repeated_expressions=[RepeatedExpression(**r) for r in metrics["repeated_expressions"]],
             speech_pace_analysis=SpeechPaceAnalysis(**metrics["speech_pace_analysis"]),
-            volume_analysis=VolumeAnalysis(
-                volume_db_mean=audio_metrics["volume_db_mean"],
-                volume_db_std=audio_metrics["volume_db_std"],
-            ),
             silence_analysis=SilenceAnalysis(
                 total_silence_seconds=audio_metrics["total_silence_seconds"],
                 pause_rate_percent=audio_metrics["pause_rate_percent"],
                 critical_silence_count=audio_metrics["critical_silence_count"],
             ),
             ai_evaluation=AiEvaluation(**ai_res),
-            model_answer=ai_res.get("model_answer", ""),
-            job_category=job_category,
-            interview_id=interview_id
+            #model_answer=ai_res.get("model_answer", "")
         )
     except CustomException:
         raise
