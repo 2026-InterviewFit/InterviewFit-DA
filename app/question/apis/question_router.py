@@ -6,8 +6,8 @@ from app.question.services.question_service import generate_first_question
 router = APIRouter()
 
 @router.post("/one-to-one/create", response_model=QuestionResponse)
-def create_first_question(request: QuestionRequest):
-    return generate_first_question(
+async def create_first_question(request: QuestionRequest):
+    return await generate_first_question(
         count=request.count,
         job=request.job,
         analyses=request.analyses,

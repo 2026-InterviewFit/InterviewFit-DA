@@ -1,11 +1,11 @@
 from textwrap import dedent
 
-from app.question.schemas.question_schema import CoverLetterQuestionAnalysisDto2, StarDto
+from app.question.schemas.question_schema import CoverLetterQuestionAnalysisItem, StarItem
 
 def create_question_prompt(
     count: int,
     job: str,
-    analyses: list[CoverLetterQuestionAnalysisDto2],
+    analyses: list[CoverLetterQuestionAnalysisItem],
     previous_questions: list[str] | None
 ) -> tuple[str, str]:
     """
@@ -19,12 +19,18 @@ def create_question_prompt(
     Generate personalized interview questions based on the candidate's self-introduction analysis.
 
     Rules:
-    - Output only one JSON array.
+    - Output only a JSON object that conforms to the provided response schema.
     - Generate exactly the requested number of questions.
-    - Each element must contain one interview question.
+    - Each question must include:
+      - "question"
+      - "question_number"
+    - The question_number must exactly match one of the self-introduction question numbers provided in the analysis.
+    - Never invent a new question_number.
     - Questions must be open-ended.
     - Prioritize experiences with higher importance scores.
-    - Focus more questions on high-importance experiences.
+    - However, ensure balanced coverage across all provided self-introduction question numbers.
+    - Do not generate all questions from only the highest-scored experiences.
+    - Generate at least one question for each question_number before assigning additional questions.
     - Do not ask questions that only test simple definitions.
     - Questions should verify:
       1. actual experience ownership
@@ -73,6 +79,7 @@ def create_question_prompt(
     {count}개
     ### 자기소개서 분석 결과
     {analysis_text}
+    
     {previous_rule}
     질문 목적:
     1. 지원자가 실제로 해당 경험을 수행했는지 검증
@@ -83,13 +90,14 @@ def create_question_prompt(
     조건:
     - 반드시 {count}개의 질문만 생성하세요.
     - 중요도가 높은 경험을 우선 활용하세요.
+    - 전체 질문 개수가 문항 개수보다 많다면, 중요도 점수가 높은 문항에 추가 질문을 배정하세요.
+    - 특정 하나의 문항에 질문이 집중되지 않도록 하세요.
     - 각 질문은 서로 다른 평가 목적을 가져야 합니다.
-    - 반드시 JSON 배열만 반환하세요.
     """)
 
     return system_prompt, user_prompt
 
-def format_star(star: StarDto | None) -> str:
+def format_star(star: StarItem | None) -> str:
     if not star:
         return "-"
 

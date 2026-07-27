@@ -6,12 +6,12 @@ from app.common.exceptions.status_code import StatusCode
 from app.core.config import settings
 from app.core.gemini_client import question_client
 from app.question.prompts.question_prompts import create_question_prompt
-from app.question.schemas.question_schema import QuestionResponse, CoverLetterQuestionAnalysisDto2
+from app.question.schemas.question_schema import QuestionResponse, CoverLetterQuestionAnalysisItem
 
-def generate_first_question(
+async def generate_first_question(
     count: int,
     job: str,
-    analyses: list[CoverLetterQuestionAnalysisDto2],
+    analyses: list[CoverLetterQuestionAnalysisItem],
     previous_questions: list[str] | None
 ) -> QuestionResponse:
     if question_client is None:
@@ -48,7 +48,7 @@ def generate_first_question(
     ]
 
     try:
-        response = question_client.models.generate_content(
+        response = await question_client.aio.models.generate_content(
             model=getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash-lite"),
             contents=contents,
             config=config
