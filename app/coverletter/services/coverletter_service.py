@@ -8,7 +8,7 @@ from app.core.gemini_client import coverletter_client
 from app.coverletter.prompts.coverletter_prompts import create_analysis_prompt
 from app.coverletter.schemas.coverletter_schema import CoverLetterAnalysisResponse
 
-def generate_cover_letter_analysis(coverletter: str) -> CoverLetterAnalysisResponse:
+async def generate_cover_letter_analysis(coverletter: str) -> CoverLetterAnalysisResponse:
     if coverletter_client is None:
         raise CustomException(
             status=StatusCode.INTERNAL_SERVER_ERROR,
@@ -40,7 +40,7 @@ def generate_cover_letter_analysis(coverletter: str) -> CoverLetterAnalysisRespo
     ]
 
     try:
-        response = coverletter_client.models.generate_content(
+        response = await coverletter_client.aio.models.generate_content(
             model=getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash-lite"),
             contents=contents,
             config=config,
