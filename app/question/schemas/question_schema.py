@@ -21,6 +21,7 @@ class QuestionRequest(BaseModel):
     job: str
     analyses: list[CoverLetterQuestionAnalysisItem] = Field(default_factory=list)
     previous_questions: list[str] | None = None
+    reusable_questions: list[str] | None = None
 
 class QuestionItem(BaseModel):
     question: str

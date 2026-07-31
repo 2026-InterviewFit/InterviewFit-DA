@@ -12,4 +12,5 @@ async def create_first_question(request: QuestionRequest):
         job=request.job,
         analyses=request.analyses,
         previous_questions=request.previous_questions,
+        reusable_questions=request.reusable_questions,
     )

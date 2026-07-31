@@ -1,3 +1,5 @@
+import asyncio
+
 from google.genai import types
 
 from app.common.exceptions.custom_exception import CustomException
@@ -8,11 +10,14 @@ from app.core.gemini_client import question_client
 from app.question.prompts.question_prompts import create_question_prompt
 from app.question.schemas.question_schema import QuestionResponse, CoverLetterQuestionAnalysisItem
 
+MAX_RETRY = 2
+
 async def generate_first_question(
     count: int,
     job: str,
     analyses: list[CoverLetterQuestionAnalysisItem],
-    previous_questions: list[str] | None
+    previous_questions: list[str] | None,
+    reusable_questions: list[str] | None,
 ) -> QuestionResponse:
     if question_client is None:
         raise CustomException(
@@ -25,7 +30,7 @@ async def generate_first_question(
         count=count,
         job=job,
         analyses=analyses,
-        previous_questions=previous_questions,
+        previous_questions=(previous_questions or []) + (reusable_questions or []),
     )
 
     config = types.GenerateContentConfig(
@@ -47,27 +52,37 @@ async def generate_first_question(
         }
     ]
 
-    try:
-        response = await question_client.aio.models.generate_content(
-            model=getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash-lite"),
-            contents=contents,
-            config=config
-        )
-    except Exception:
-        raise CustomException(
-            status=StatusCode.INTERNAL_SERVER_ERROR,
-            code=ErrorCode.QUESTION_GENERATION_FAILED,
-            message="질문 생성 중 오류가 발생했습니다."
-        )
+    parsed: QuestionResponse
 
-    try:
-        parsed: QuestionResponse = response.parsed
-    except Exception:
-        raise CustomException(
-            status=StatusCode.INTERNAL_SERVER_ERROR,
-            code=ErrorCode.INVALID_QUESTION_RESPONSE,
-            message="질문 생성 결과를 파싱할 수 없습니다."
-        )
+    for attempt in range(MAX_RETRY):
+        try:
+            response = await question_client.aio.models.generate_content(
+                model=getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash-lite"),
+                contents=contents,
+                config=config
+            )
+        except Exception:
+            if attempt == MAX_RETRY - 1:
+                raise CustomException(
+                    status=StatusCode.INTERNAL_SERVER_ERROR,
+                    code=ErrorCode.QUESTION_GENERATION_FAILED,
+                    message="질문 생성 중 오류가 발생했습니다."
+                )
+            await asyncio.sleep(1)
+            continue
+
+        try:
+            parsed = response.parsed
+            break
+        except Exception:
+            if attempt == MAX_RETRY - 1:
+                raise CustomException(
+                    status=StatusCode.INTERNAL_SERVER_ERROR,
+                    code=ErrorCode.INVALID_QUESTION_RESPONSE,
+                    message="질문 생성 결과를 파싱할 수 없습니다."
+                )
+            await asyncio.sleep(1)
+            continue
 
     # 요청 개수보다 많이 생성된 경우 제한
     if len(parsed.questions) > count:
