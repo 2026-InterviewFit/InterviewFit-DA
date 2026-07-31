@@ -4,11 +4,18 @@ from app.followup.schemas.followup_schema import FollowUpRequest, FollowUpRespon
 from app.followup.services.followup_service import generate_follow_up_question
 
 
-router = APIRouter(prefix="/apis/followup", tags=["FollowUp"])
+router = APIRouter()
 
 
 @router.post("/create", response_model=FollowUpResponse)
 def create_follow_up_question(request: FollowUpRequest):
+    """
+    Spring Boot에서 원 질문 + 사용자 답변 + 직무 정보를 받아
+    Gemini 기반 꼬리질문 1개를 생성한다.
+
+    최종 경로:
+    POST /apis/followup/create
+    """
     try:
         follow_up_question = generate_follow_up_question(
             job=request.job,
