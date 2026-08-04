@@ -47,9 +47,6 @@ Rules:
 - improvements:
   개선하면 좋은 점
 
-- keywords:
-  면접 질문 생성에 활용할 핵심 키워드
-
 - importance_score:
   면접 준비 중요도 (0~100)
 

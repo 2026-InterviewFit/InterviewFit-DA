@@ -18,7 +18,6 @@ class CoverLetterQuestionAnalysisItem(BaseModel):
     strengths: list[str]
     improvements: list[str]
     skills: list[str]
-    keywords: list[str]
     importance_score: float
 
 class CoverLetterAnalysisResponse(BaseModel):
