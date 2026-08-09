@@ -10,8 +10,6 @@ from app.core.gemini_client import question_client
 from app.question.prompts.question_prompts import create_question_prompt
 from app.question.schemas.question_schema import QuestionResponse, CoverLetterQuestionAnalysisItem
 
-MAX_RETRY = 2
-
 async def generate_first_question(
     count: int,
     job: str,
@@ -54,7 +52,9 @@ async def generate_first_question(
 
     parsed: QuestionResponse
 
-    for attempt in range(MAX_RETRY):
+    max_retry = 1
+
+    for attempt in range(max_retry + 1):
         try:
             response = await question_client.aio.models.generate_content(
                 model=getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash-lite"),
@@ -62,7 +62,7 @@ async def generate_first_question(
                 config=config
             )
         except Exception:
-            if attempt == MAX_RETRY - 1:
+            if attempt == max_retry:
                 raise CustomException(
                     status=StatusCode.INTERNAL_SERVER_ERROR,
                     code=ErrorCode.QUESTION_GENERATION_FAILED,
@@ -75,7 +75,7 @@ async def generate_first_question(
             parsed = response.parsed
             break
         except Exception:
-            if attempt == MAX_RETRY - 1:
+            if attempt == max_retry:
                 raise CustomException(
                     status=StatusCode.INTERNAL_SERVER_ERROR,
                     code=ErrorCode.INVALID_QUESTION_RESPONSE,
