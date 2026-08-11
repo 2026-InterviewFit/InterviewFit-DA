@@ -1,3 +1,5 @@
+# app/video_storage/minio_downloader.py
+
 from pathlib import Path
 from tempfile import gettempdir
 from urllib.parse import urlparse
@@ -10,14 +12,20 @@ from app.core.config import settings
 
 def get_bucket_name() -> str:
     """
-    MinIO bucket 이름 반환.
-    설정명 차이를 고려해 BUCKET_NAME을 우선 확인하고,
-    없으면 MINIO_BUCKET을 사용한다.
+    MinIO bucket 이름을 반환한다.
     """
 
     bucket_name = (
-        getattr(settings, "BUCKET_NAME", None)
-        or getattr(settings, "MINIO_BUCKET", None)
+        getattr(
+            settings,
+            "BUCKET_NAME",
+            None,
+        )
+        or getattr(
+            settings,
+            "MINIO_BUCKET",
+            None,
+        )
     )
 
     if not bucket_name:
@@ -32,16 +40,40 @@ def normalize_video_url_to_object_key(
     video_url: str,
 ) -> str:
     """
-    Spring에서 넘어온 video_url 또는 objectKey를
-    MinIO objectKey 형태로 정규화한다.
+    Spring에서 전달받은 videoUrl 또는 objectKey를
+    실제 MinIO objectKey로 변환한다.
 
-    입력 예:
-    - videos/abc.webm
-    - interview-videos/videos/abc.webm
-    - http://localhost:9000/interview-videos/videos/abc.webm
+    현재 Spring 저장 구조:
+
+    bucket:
+        videos
+
+    objectKey:
+        videos/uuid_interview.webm
+
+    중요:
+    raw objectKey가
+    videos/uuid_interview.webm
+    형태로 들어오면 앞의 videos/를 제거하면 안 된다.
+
+    반면 전체 URL이 들어온 경우에는
+    URL path의 첫 번째 bucket 이름만 제거한다.
+
+    예:
+
+    raw objectKey:
+        videos/abc.webm
+        -> videos/abc.webm
+
+    full URL:
+        http://localhost:9000/videos/videos/abc.webm
+        -> videos/abc.webm
     """
 
-    if not video_url or not video_url.strip():
+    if (
+        not video_url
+        or not video_url.strip()
+    ):
         raise ValueError(
             "video_url 값이 비어 있습니다."
         )
@@ -50,22 +82,30 @@ def normalize_video_url_to_object_key(
 
     value = video_url.strip()
 
-    # URL 형태인 경우 path 부분만 추출
-    if (
+    is_full_url = (
         value.startswith("http://")
         or value.startswith("https://")
-    ):
+    )
+
+    if is_full_url:
         parsed = urlparse(value)
-        value = parsed.path
 
-    # 앞쪽 / 제거
-    value = value.lstrip("/")
+        value = parsed.path.lstrip("/")
 
-    # bucket 이름이 포함되어 있으면 제거
-    bucket_prefix = f"{bucket_name}/"
+        bucket_prefix = f"{bucket_name}/"
 
-    if value.startswith(bucket_prefix):
-        value = value[len(bucket_prefix):]
+        # URL의 첫 bucket prefix만 제거
+        if value.startswith(
+            bucket_prefix
+        ):
+            value = value[
+                len(bucket_prefix):
+            ]
+
+    else:
+        # raw objectKey일 경우에는
+        # videos/ prefix를 그대로 유지한다.
+        value = value.lstrip("/")
 
     if not value:
         raise ValueError(
@@ -76,11 +116,54 @@ def normalize_video_url_to_object_key(
 
 
 def create_minio_client() -> Minio:
+    """
+    MinIO Client를 생성한다.
+    """
+
+    endpoint = getattr(
+        settings,
+        "MINIO_ENDPOINT",
+        None,
+    )
+
+    access_key = getattr(
+        settings,
+        "MINIO_ACCESS_KEY",
+        None,
+    )
+
+    secret_key = getattr(
+        settings,
+        "MINIO_SECRET_KEY",
+        None,
+    )
+
+    secure = getattr(
+        settings,
+        "MINIO_SECURE",
+        False,
+    )
+
+    if not endpoint:
+        raise RuntimeError(
+            "MINIO_ENDPOINT 설정이 없습니다."
+        )
+
+    if not access_key:
+        raise RuntimeError(
+            "MINIO_ACCESS_KEY 설정이 없습니다."
+        )
+
+    if not secret_key:
+        raise RuntimeError(
+            "MINIO_SECRET_KEY 설정이 없습니다."
+        )
+
     return Minio(
-        settings.MINIO_ENDPOINT,
-        access_key=settings.MINIO_ACCESS_KEY,
-        secret_key=settings.MINIO_SECRET_KEY,
-        secure=settings.MINIO_SECURE,
+        endpoint,
+        access_key=access_key,
+        secret_key=secret_key,
+        secure=secure,
     )
 
 
@@ -88,8 +171,8 @@ def download_video_from_minio(
     video_url: str,
 ) -> str:
     """
-    MinIO에서 영상을 임시 디렉터리로 다운로드하고
-    로컬 파일 경로를 반환한다.
+    MinIO에서 영상을 내려받아
+    임시 로컬 경로를 반환한다.
     """
 
     bucket_name = get_bucket_name()
@@ -100,10 +183,34 @@ def download_video_from_minio(
         )
     )
 
-    client = create_minio_client()
+    print(
+        "======================================"
+    )
+
+    print(
+        "[MinIO 영상 다운로드]"
+    )
+
+    print(
+        f"bucket = {bucket_name}"
+    )
+
+    print(
+        f"object_key = {object_key}"
+    )
+
+    print(
+        "======================================"
+    )
+
+    client = (
+        create_minio_client()
+    )
 
     temp_dir = (
-        Path(gettempdir())
+        Path(
+            gettempdir()
+        )
         / "interviewfit-videos"
     )
 
@@ -112,10 +219,15 @@ def download_video_from_minio(
         exist_ok=True,
     )
 
-    # objectKey 마지막 파일명 사용
+    filename = (
+        Path(
+            object_key
+        ).name
+    )
+
     local_path = (
         temp_dir
-        / Path(object_key).name
+        / filename
     )
 
     try:
@@ -125,11 +237,67 @@ def download_video_from_minio(
             str(local_path),
         )
 
-        return str(local_path)
+        print(
+            "======================================"
+        )
+
+        print(
+            "[MinIO 영상 다운로드 성공]"
+        )
+
+        print(
+            f"bucket = {bucket_name}"
+        )
+
+        print(
+            f"object_key = {object_key}"
+        )
+
+        print(
+            f"local_path = {local_path}"
+        )
+
+        print(
+            "======================================"
+        )
+
+        return str(
+            local_path
+        )
 
     except S3Error as error:
+        print(
+            "======================================"
+        )
 
-        if error.code == "NoSuchKey":
+        print(
+            "[MinIO 영상 다운로드 실패]"
+        )
+
+        print(
+            f"bucket = {bucket_name}"
+        )
+
+        print(
+            f"object_key = {object_key}"
+        )
+
+        print(
+            f"error code = {error.code}"
+        )
+
+        print(
+            f"error = {error}"
+        )
+
+        print(
+            "======================================"
+        )
+
+        if error.code in {
+            "NoSuchKey",
+            "NoSuchObject",
+        }:
             raise FileNotFoundError(
                 "MinIO에서 영상을 찾을 수 없습니다. "
                 f"bucket={bucket_name}, "
@@ -148,24 +316,44 @@ def resolve_video_path(
     video_url: str,
 ) -> str:
     """
-    로컬 파일 경로라면 그대로 사용하고,
-    아니면 MinIO objectKey로 간주해 다운로드한다.
+    입력값이 실제 로컬 파일이면 그대로 사용한다.
+
+    로컬 파일이 아니면
+    MinIO objectKey 또는 URL이라고 판단하여
+    MinIO에서 다운로드한다.
     """
 
-    if not video_url or not video_url.strip():
+    if (
+        not video_url
+        or not video_url.strip()
+    ):
         raise ValueError(
             "video_url 값이 필요합니다."
         )
 
-    local_path = Path(
-        video_url
-    )
+    value = video_url.strip()
+
+    local_path = Path(value)
 
     if local_path.exists():
-        return str(
+        resolved_path = (
             local_path.resolve()
         )
 
-    return download_video_from_minio(
-        video_url
+        print(
+            "[로컬 영상 사용]"
+        )
+
+        print(
+            f"path = {resolved_path}"
+        )
+
+        return str(
+            resolved_path
+        )
+
+    return (
+        download_video_from_minio(
+            value
+        )
     )
