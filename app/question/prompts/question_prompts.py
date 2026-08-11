@@ -55,8 +55,6 @@ def create_question_prompt(
     {", ".join(analysis.improvements) if analysis.improvements else "-"}
     기술 스택:
     {", ".join(analysis.skills) if analysis.skills else "-"}
-    핵심 키워드:
-    {", ".join(analysis.keywords) if analysis.keywords else "-"}
     """
     for analysis in analyses
     )

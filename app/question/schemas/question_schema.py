@@ -13,7 +13,6 @@ class CoverLetterQuestionAnalysisItem(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     improvements: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
-    keywords: list[str] = Field(default_factory=list)
     importance_score: float | None = None
 
 class QuestionRequest(BaseModel):
