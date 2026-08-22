@@ -11,7 +11,8 @@ from app.core.gemini_client import coverletter_client
 from app.coverletter.prompts.coverletter_prompts import (
     create_coverletter_extraction_prompt,
     create_coverletter_analysis_prompt,
-    create_job_recommendation_prompt, create_coverletter_importance_prompt
+    create_job_recommendation_prompt,
+    create_coverletter_importance_prompt
 )
 from app.coverletter.schemas.coverletter_schema import (
     CoverLetterQuestionItem,
@@ -19,7 +20,8 @@ from app.coverletter.schemas.coverletter_schema import (
     CoverLetterQuestionAnalysisItem,
     JobRecommendation,
     CoverLetterDetailAnalysisResponse,
-    CoverLetterQuestionAnalysisResult, CoverLetterImportanceResponse
+    CoverLetterQuestionAnalysisResult,
+    CoverLetterImportanceResponse
 )
 
 logger = logging.getLogger(__name__)
@@ -150,7 +152,6 @@ async def generate_coverletter_question_analysis(item: CoverLetterQuestionItem) 
     system_prompt, user_prompt = create_coverletter_analysis_prompt(
         question=item.question,
         answer=item.answer,
-        summary=item.summary,
     )
 
     return await _generate(

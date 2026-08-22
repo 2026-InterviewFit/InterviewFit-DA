@@ -21,25 +21,42 @@ def create_question_prompt(
     Rules:
     - Output only a JSON object that conforms to the provided response schema.
     - Generate exactly the requested number of questions.
-    - Each question must include:
-      - "question"
-      - "question_number"
+    
+    ### Output Requirements
+    - The response MUST be a JSON object containing a "questions" field.
+    - The "questions" field MUST be a list of question objects.
+    - Each question object MUST contain the following fields:
+      - "question": The actual interview question to ask the candidate.
+      - "question_number": The number of the self-introduction question that the interview question is based on.
     - The question_number must exactly match one of the self-introduction question numbers provided in the analysis.
     - Never invent a new question_number.
+    - Do not output questions as separate fields or as a flat structure.
+    - Do not include explanations or any additional fields.
+    
+    ### Question Distribution
+    - When the requested number of questions is equal to the number of provided self-introduction question numbers,
+      generate exactly one question for each question_number.
+    - In this case, do NOT use importance scores to decide the question distribution.
+    - When the requested number of questions is greater than the number of provided question numbers,
+      first generate exactly one question for every provided question_number.
+    - After every question_number has been covered once, generate the remaining questions based on importance scores.
+    - Higher-importance question numbers should receive additional questions preferentially,
+      while avoiding excessive concentration on a single question_number.
+    
+    ### Question Quality
     - Questions must be open-ended.
-    - Prioritize experiences with higher importance scores.
-    - However, ensure balanced coverage across all provided self-introduction question numbers.
-    - Do not generate all questions from only the highest-scored experiences.
-    - Generate at least one question for each question_number before assigning additional questions.
-    - Do not ask questions that only test simple definitions.
+    - Prioritize questions that verify the candidate's actual experience.
+    - When previous questions are heavily focused on experience verification, include relevant technical concept or principle questions to ensure balanced evaluation.
+    - Technical concept questions should be relevant to the candidate's stated skills, experience, or job requirements.
+    - Avoid repetitive or trivial definition questions.
+    
+    ### Evaluation Areas
     - Questions should verify:
       1. actual experience ownership
       2. technical decisions and trade-offs
       3. problem-solving process
       4. improvements and reflection
       5. job-related competency
-    - Avoid duplicate or similar questions.
-    - Do not generate explanations or additional text.
     """)
 
     analysis_text = "\n\n".join(f"""
@@ -79,18 +96,6 @@ def create_question_prompt(
     {analysis_text}
     
     {previous_rule}
-    질문 목적:
-    1. 지원자가 실제로 해당 경험을 수행했는지 검증
-    2. 기술 선택의 이유와 trade-off 확인
-    3. 문제 발생 상황과 해결 과정 확인
-    4. 개선 방향과 회고 확인
-    5. 지원자의 역량과 직무 적합성 확인
-    조건:
-    - 반드시 {count}개의 질문만 생성하세요.
-    - 중요도가 높은 경험을 우선 활용하세요.
-    - 전체 질문 개수가 문항 개수보다 많다면, 중요도 점수가 높은 문항에 추가 질문을 배정하세요.
-    - 특정 하나의 문항에 질문이 집중되지 않도록 하세요.
-    - 각 질문은 서로 다른 평가 목적을 가져야 합니다.
     """)
 
     return system_prompt, user_prompt
