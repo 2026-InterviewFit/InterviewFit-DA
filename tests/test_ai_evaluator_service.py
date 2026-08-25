@@ -36,8 +36,51 @@ class AiEvaluatorServiceTest(unittest.TestCase):
 
         config = generate_content.call_args.kwargs["config"]
         self.assertEqual(config.response_mime_type, "application/json")
-        self.assertIs(config.response_schema, ai_evaluator_service.AiEvaluation)
+        self.assertIs(
+            config.response_schema,
+            ai_evaluator_service.GeminiAiEvaluation,
+        )
         return result
+
+    def test_gemini_schema_has_no_additional_properties(self):
+        schema = ai_evaluator_service.GeminiAiEvaluation.model_json_schema()
+
+        def contains_additional_properties(value):
+            if isinstance(value, dict):
+                return "additionalProperties" in value or any(
+                    contains_additional_properties(child)
+                    for child in value.values()
+                )
+            if isinstance(value, list):
+                return any(contains_additional_properties(child) for child in value)
+            return False
+
+        self.assertFalse(contains_additional_properties(schema))
+
+    def test_structured_output_converts_to_public_response_shape(self):
+        parsed = ai_evaluator_service.GeminiAiEvaluation.model_validate(VALID_DATA)
+        response = SimpleNamespace(parsed=parsed, text=_json_text())
+        with patch.object(
+            ai_evaluator_service.client.models,
+            "generate_content",
+            return_value=response,
+        ):
+            result = ai_evaluator_service.evaluate_interview_content("답변", "백엔드")
+
+        self.assertEqual(result, VALID_DATA)
+        self.assertEqual(result["star_score"], {"S": 8, "T": 7, "A": 9, "R": 8})
+        self.assertEqual(set(result), set(VALID_DATA))
+
+    def test_gemini_api_failure_raises_ai_evaluation_failed(self):
+        with patch.object(
+            ai_evaluator_service.client.models,
+            "generate_content",
+            side_effect=ValueError("API failure"),
+        ):
+            with self.assertRaises(CustomException) as raised:
+                ai_evaluator_service.evaluate_interview_content("답변", "백엔드")
+
+        self.assertEqual(raised.exception.code, ErrorCode.AI_EVALUATION_FAILED)
 
     def test_normal_json_response(self):
         self.assertEqual(self._evaluate_text(_json_text()), VALID_DATA)
