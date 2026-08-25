@@ -233,7 +233,11 @@ def process_interview_analysis(
         metrics = analyze_speech_metrics(stt_text, duration)
 
         # 3. Gemini 평가
-        ai_res = ai_evaluator_service.evaluate_interview_content(stt_text, job_category)
+        ai_res = ai_evaluator_service.evaluate_interview_content(
+            stt_text,
+            job_category,
+            original_question,
+        )
         if not isinstance(ai_res, dict):
             raise CustomException(
                 status=StatusCode.INTERNAL_SERVER_ERROR,
