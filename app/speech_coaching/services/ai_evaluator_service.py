@@ -31,10 +31,21 @@ class GeminiStarScore(BaseModel):
 class GeminiAiEvaluation(BaseModel):
     """Gemini-only schema; the public response continues to use AiEvaluation."""
 
-    star_score: GeminiStarScore
-    feedback: str
-    keywords: list[str]
-    model_answer: str
+    star_score: GeminiStarScore = Field(
+        description="지원자가 실제로 말한 답변의 STAR 요소별 평가 점수",
+    )
+    feedback: str = Field(
+        description="지원자가 실제로 말한 답변에 대한 평가와 구체적인 개선점",
+    )
+    keywords: list[str] = Field(
+        description="지원자가 실제로 말한 답변에서 추출한 핵심 키워드",
+    )
+    model_answer: str = Field(
+        description=(
+            "면접 질문 원문에 직접 답하는 1인칭 모범 면접 답변 예시. "
+            "평가나 작성 지침이 아닌 지원자가 실제로 말할 수 있는 완성된 답변"
+        ),
+    )
 
 
 def _ai_evaluation_error(message: str, cause: Exception | None = None) -> CustomException:
@@ -104,13 +115,33 @@ def _validate_ai_evaluation(value: Any) -> dict[str, Any]:
     return evaluation.model_dump(by_alias=True)
 
 
-def evaluate_interview_content(script: str, job_category: str) -> dict[str, Any]:
+def evaluate_interview_content(
+    script: str,
+    job_category: str,
+    original_question: str | None = None,
+) -> dict[str, Any]:
+    question = (original_question or "").strip()
+    answer = (script or "").strip()
     prompt = f"""
-    당신은 {job_category} 직무의 전문 면접관입니다. 지원자의 답변을 STAR 방식으로 평가하세요.
-    star_score 각 항목은 0~10점 사이 정수로 평가하세요.
+    당신은 {job_category} 직무의 전문 면접관입니다.
+
+    아래 네 출력 필드의 역할을 엄격히 구분하세요.
+    1. star_score: 지원자가 실제로 말한 답변만 평가합니다. S/T/A/R을 각각 0~10 정수로 채웁니다.
+    2. feedback: 지원자가 실제로 말한 답변에 대한 평가와 구체적인 개선점입니다.
+       답변이 비어 있으면 답변이 없어 평가할 수 없다고 명시합니다.
+    3. keywords: 지원자가 실제로 말한 답변의 핵심 키워드입니다. 답변이 비어 있으면 빈 배열입니다.
+    4. model_answer: 아래 '면접 질문 원문'에 직접 답하는 완성된 모범 면접 답변 예시입니다.
+       지원자가 면접에서 그대로 말할 수 있는 자연스러운 1인칭 답변으로 작성하세요.
+       사용자 답변이 부족하거나 비어 있어도 질문 원문을 바탕으로 구체적인 모범 답변을 작성하세요.
+
+    model_answer에는 평가, 개선 조언, 답변 작성법을 넣지 마세요.
+    특히 'STAR 방식으로 답변해주세요', '구체적인 경험이 부족합니다',
+    '현재 답변은 평가하기 어렵습니다', '~하는 것이 좋습니다' 같은 코칭 문장을 넣지 마세요.
+    이러한 평가는 feedback에만 작성하세요.
 
     직무: {job_category}
-    지원자 답변: {script}
+    면접 질문 원문: {question if question else "제공되지 않음"}
+    지원자가 실제로 말한 답변: {answer if answer else "(빈 답변)"}
     """
 
     config = types.GenerateContentConfig(

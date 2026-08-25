@@ -1,7 +1,13 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
     PROJECT_NAME: str = "Interview-Fit AI Server"
 
     # CORS 허용 origin. 개발 단계에서는 전체 허용, 운영에서는 FE 도메인으로 제한 권장.
@@ -20,10 +26,5 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = False
 
     TEI_URL:str = "http://tei:80"
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
 
 settings = Settings()
