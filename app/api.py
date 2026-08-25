@@ -10,6 +10,7 @@ from app.eye.eye_blinking.apis.eye_router import router as eye_router
 from app.eye.eye_gaze.apis.gaze_router import router as gaze_router
 from app.followup.apis.followup_router import router as followup_router
 from app.video_storage.video_router import video_router
+from app.group_interview.apis.comparison_router import router as group_comparison_router
 
 api_router = APIRouter(prefix="/apis")
 
@@ -71,4 +72,10 @@ api_router.include_router(
     video_router,
     prefix="/videos",
     tags=["Videos"],
+)
+
+api_router.include_router(
+    group_comparison_router,
+    prefix="/group-interviews/comparisons",
+    tags=["GroupInterviewComparison"],
 )
