@@ -146,10 +146,60 @@ def detect_repeated_expressions(stt_text: str, min_length: int = 2, min_count: i
 
 
 # Whisper STT 변환
+def _join_whisper_segments(segments) -> str:
+    """Whisper segment iterator를 안전하게 하나의 문자열로 합친다."""
+    texts = []
+
+    for segment in segments:
+        text = (segment.text or "").strip()
+        if text:
+            texts.append(text)
+
+    return " ".join(texts).strip()
+
+
 def run_free_whisper_stt(audio_path: str) -> str:
+    """
+    Whisper STT 변환.
+
+    1차는 한국어 고정으로 변환하고,
+    결과가 비어 있으면 2차에서 언어 자동 감지 + 완화된 no-speech 기준으로
+    한 번 더 시도한다.
+
+    실제 무음 파일은 최종적으로 빈 문자열을 반환하며,
+    라우터가 이를 422로 변환한다.
+    """
     try:
-        segments, _ = model.transcribe(audio_path, beam_size=5, language="ko")
-        return " ".join([segment.text for segment in segments]).strip()
+        segments, _ = model.transcribe(
+            audio_path,
+            beam_size=5,
+            language="ko",
+            condition_on_previous_text=False,
+            temperature=0.0,
+        )
+
+        text = _join_whisper_segments(segments)
+
+        if text:
+            return text
+
+        logger.warning(
+            "1차 Whisper STT 결과가 비어 있어 재시도합니다: %s",
+            audio_path,
+        )
+
+        segments, _ = model.transcribe(
+            audio_path,
+            beam_size=5,
+            language=None,
+            condition_on_previous_text=False,
+            temperature=0.0,
+            no_speech_threshold=0.8,
+            log_prob_threshold=-2.0,
+        )
+
+        return _join_whisper_segments(segments)
+
     except Exception as e:
         logger.error("STT 변환 실패: %s", e)
         return "STT 변환 실패"
