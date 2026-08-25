@@ -70,7 +70,10 @@ class GroupComparisonRequestValidationTest(unittest.TestCase):
     def test_overall_request(self):
         request = request_for([participant(3), participant(4)], question_index=None)
         self.assertIsNone(request.questionIndex)
-        self.assertIn("전체 면접 결과에서는", create_comparison_prompt(request))
+        prompt = create_comparison_prompt(request)
+        self.assertIn("전체 면접 결과에서는", prompt)
+        self.assertIn("2~3문장", prompt)
+        self.assertIn("반복 연습", prompt)
 
     def test_tied_participants_are_accepted(self):
         request = request_for([participant(3), participant(4)])

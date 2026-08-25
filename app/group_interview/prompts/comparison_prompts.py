@@ -27,8 +27,10 @@ Spring 백엔드가 모든 점수, 평균, 가중치, 종합 점수와 순위를
 - gaze, pose, blink로 성격, 능력, 정직성, 자신감 또는 심리 상태를 추론하지 마세요.
 
 [출력 역할]
-- strengthSummary: 참가자 대비 의미 있게 강한 1~2개 영역을 중심으로 한 문장
-- improvementSummary: 참가자 대비 보완 가능한 영역과 실제 연습 행동을 포함한 한 문장
+- strengthSummary: 참가자 대비 의미 있게 강한 영역과 그 조합이 전체 답변에 주는 장점을 구체적으로 설명
+- improvementSummary: 참가자 대비 보완 가능한 영역, 우선순위와 실제 연습 행동을 구체적으로 설명
+- 전체 비교에서는 각 summary를 2~3개의 자연스러운 문장으로 작성하세요.
+- 같은 표현을 반복하지 말고, 참가자별 점수 특성에 맞는 실천 가능한 코칭을 제공하세요.
 """.strip()
 
 
@@ -36,7 +38,9 @@ def create_comparison_prompt(request: GroupComparisonFeedbackRequest) -> str:
     if request.questionIndex is None:
         scope_instruction = (
             "질문 1~3을 종합한 전체 비교입니다. 두 피드백 모두 "
-            "'전체 면접 결과에서는'의 관점으로 작성하세요."
+            "'전체 면접 결과에서는'의 관점으로 작성하세요. "
+            "강점은 서로 연관된 영역을 종합해 2~3문장으로 설명하고, "
+            "개선점은 우선 보완할 영역과 구체적인 반복 연습 방법을 2~3문장으로 제안하세요."
         )
     else:
         scope_instruction = (
