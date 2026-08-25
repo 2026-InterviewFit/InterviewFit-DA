@@ -234,12 +234,24 @@ def process_interview_analysis(
 
         # 3. Gemini 평가
         ai_res = ai_evaluator_service.evaluate_interview_content(stt_text, job_category)
-        if isinstance(ai_res, dict) and "error" in ai_res:
+        if not isinstance(ai_res, dict):
             raise CustomException(
                 status=StatusCode.INTERNAL_SERVER_ERROR,
                 code=ErrorCode.AI_EVALUATION_FAILED,
-                message=ai_res["error"]
+                message="Gemini 평가 결과 형식이 올바르지 않습니다."
             )
+        try:
+            ai_evaluation = AiEvaluation(**ai_res)
+        except (TypeError, ValueError) as e:
+            logger.warning(
+                "Gemini 평가 결과 매핑 실패: error_type=%s",
+                type(e).__name__,
+            )
+            raise CustomException(
+                status=StatusCode.INTERNAL_SERVER_ERROR,
+                code=ErrorCode.AI_EVALUATION_FAILED,
+                message="Gemini 평가 결과 형식이 올바르지 않습니다."
+            ) from e
 
         # 4. 음량 분석을 제외한 응답 스키마 매핑 및 반환
         return SpeechReportResponse(
@@ -257,7 +269,7 @@ def process_interview_analysis(
                 pause_rate_percent=audio_metrics["pause_rate_percent"],
                 critical_silence_count=audio_metrics["critical_silence_count"],
             ),
-            ai_evaluation=AiEvaluation(**ai_res),
+            ai_evaluation=ai_evaluation,
             #model_answer=ai_res.get("model_answer", "")
         )
     except CustomException:
