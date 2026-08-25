@@ -4,7 +4,7 @@ from typing import Any
 
 from google import genai
 from google.genai import types
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.error_code import ErrorCode
@@ -17,6 +17,24 @@ logger = logging.getLogger(__name__)
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 _RAW_RESPONSE_LOG_LIMIT = 300
+
+
+class GeminiStarScore(BaseModel):
+    """Fixed object schema supported by the Gemini Developer API."""
+
+    S: int = Field(ge=0, le=10)
+    T: int = Field(ge=0, le=10)
+    A: int = Field(ge=0, le=10)
+    R: int = Field(ge=0, le=10)
+
+
+class GeminiAiEvaluation(BaseModel):
+    """Gemini-only schema; the public response continues to use AiEvaluation."""
+
+    star_score: GeminiStarScore
+    feedback: str
+    keywords: list[str]
+    model_answer: str
 
 
 def _ai_evaluation_error(message: str, cause: Exception | None = None) -> CustomException:
@@ -63,7 +81,9 @@ def _parse_json_object(raw_text: str) -> dict[str, Any]:
 
 
 def _validate_ai_evaluation(value: Any) -> dict[str, Any]:
-    if isinstance(value, AiEvaluation):
+    if isinstance(value, GeminiAiEvaluation):
+        evaluation = AiEvaluation.model_validate(value.model_dump())
+    elif isinstance(value, AiEvaluation):
         evaluation = value
     else:
         if not isinstance(value, dict):
@@ -97,7 +117,7 @@ def evaluate_interview_content(script: str, job_category: str) -> dict[str, Any]
         temperature=0.3,
         max_output_tokens=2048,
         response_mime_type="application/json",
-        response_schema=AiEvaluation,
+        response_schema=GeminiAiEvaluation,
     )
 
     try:
