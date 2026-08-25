@@ -19,6 +19,8 @@ class PtSlideAnalyzeResult(BaseModel):
 
     summary: Optional[str] = None
 
+    image_object_key: Optional[str] = None
+
 
 class PtDocumentAnalyzeResponse(BaseModel):
     object_key: str

@@ -95,7 +95,7 @@ async def _generate(system_prompt: str, user_prompt: str, response_schema):
     for attempt in range(max_retry + 1):
         try:
             response = await coverletter_client.aio.models.generate_content(
-                model=getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash-lite"),
+                model=getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite"),
                 contents=contents,
                 config=config,
             )

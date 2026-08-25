@@ -48,7 +48,7 @@ class PtSummaryService:
                     model=getattr(
                         settings,
                         "GEMINI_MODEL",
-                        "gemini-2.5-flash-lite",
+                        "gemini-3.5-flash-lite",
                     ),
                     contents=prompt,
                 )
@@ -135,7 +135,7 @@ class PtSummaryService:
                     model=getattr(
                         settings,
                         "GEMINI_MODEL",
-                        "gemini-2.5-flash-lite",
+                        "gemini-3.5-flash-lite",
                     ),
                     contents=prompt,
                 )

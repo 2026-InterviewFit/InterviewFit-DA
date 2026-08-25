@@ -69,7 +69,7 @@ def generate_follow_up_question(
 
     try:
         response = followup_client.models.generate_content(
-            model=getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash-lite"),
+            model=getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite"),
             contents=prompt,
         )
 

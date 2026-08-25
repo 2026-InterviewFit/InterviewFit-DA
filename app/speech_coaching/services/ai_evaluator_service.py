@@ -29,7 +29,7 @@ def evaluate_interview_content(script: str, job_category: str):
         """
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.5-flash-lite",
             contents=prompt
         )
 
