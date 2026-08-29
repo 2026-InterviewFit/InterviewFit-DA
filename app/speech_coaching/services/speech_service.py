@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 
 # Whisper AI 모델 로드 (서버 시작 시 1회)
 logger.info("무료 Whisper AI 모델을 로드하는 중입니다...")
-model = WhisperModel("base", device="cpu", compute_type="float32")
+#model = WhisperModel("base", device="cpu", compute_type="float32")
+model = WhisperModel("small", device="cpu", compute_type="float32")
 logger.info("AI 모델 로드 완료!")
 
 
