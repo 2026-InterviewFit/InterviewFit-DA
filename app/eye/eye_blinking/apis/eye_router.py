@@ -1,5 +1,6 @@
 import os
 import tempfile
+import traceback
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
@@ -80,6 +81,10 @@ def analyze_blinks_from_spring(request: EyeBlinkingAnalyzeRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
     except Exception as e:
+        print("\n🚨 [눈 깜빡임 분석 치명적 오류 발생] 🚨")
+        traceback.print_exc() 
+        print("=========================================\n")
+        
         raise HTTPException(
             status_code=500,
             detail=f"분석 중 오류가 발생했습니다: {str(e)}",
