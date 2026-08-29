@@ -25,14 +25,18 @@ def _json_text(feedback: str = "STAR 구조가 명확합니다.") -> str:
 
 
 class AiEvaluatorServiceTest(unittest.TestCase):
-    def _evaluate_text(self, text: str):
+    def _evaluate_text(self, text: str, script: str = "답변"):
         response = SimpleNamespace(parsed=None, text=text)
         with patch.object(
             ai_evaluator_service.client.models,
             "generate_content",
             return_value=response,
         ) as generate_content:
-            result = ai_evaluator_service.evaluate_interview_content("답변", "백엔드")
+            result = ai_evaluator_service.evaluate_interview_content(
+                script,
+                "백엔드",
+                "입사 후 원하지 않는 부서에 배치된다면 어떻게 하겠습니까?",
+            )
 
         config = generate_content.call_args.kwargs["config"]
         self.assertEqual(config.response_mime_type, "application/json")
@@ -41,6 +45,43 @@ class AiEvaluatorServiceTest(unittest.TestCase):
             ai_evaluator_service.GeminiAiEvaluation,
         )
         return result
+
+    def test_question_and_field_roles_are_included_for_answer_variants(self):
+        question = "입사 후 원하지 않는 부서에 배치된다면 어떻게 하겠습니까?"
+        cases = [
+            ("회사 배치 이유를 이해하고 새로운 업무에 적응하겠습니다.", False),
+            ("잘 모르겠습니다.", False),
+            ("", True),
+        ]
+        response = SimpleNamespace(
+            parsed=ai_evaluator_service.GeminiAiEvaluation.model_validate(VALID_DATA),
+            text=_json_text(),
+        )
+
+        for script, is_empty in cases:
+            with self.subTest(script=script):
+                with patch.object(
+                    ai_evaluator_service.client.models,
+                    "generate_content",
+                    return_value=response,
+                ) as generate_content:
+                    result = ai_evaluator_service.evaluate_interview_content(
+                        script,
+                        "백엔드",
+                        question,
+                    )
+
+                prompt = generate_content.call_args.kwargs["contents"]
+                self.assertIn(f"면접 질문 원문: {question}", prompt)
+                self.assertIn("feedback: 지원자가 실제로 말한 답변", prompt)
+                self.assertIn("model_answer: 아래 '면접 질문 원문'에 직접 답하는", prompt)
+                self.assertIn("자연스러운 1인칭 답변", prompt)
+                self.assertIn("평가는 feedback에만 작성", prompt)
+                if is_empty:
+                    self.assertIn("지원자가 실제로 말한 답변: (빈 답변)", prompt)
+                else:
+                    self.assertIn(f"지원자가 실제로 말한 답변: {script}", prompt)
+                self.assertNotEqual(result["feedback"], result["model_answer"])
 
     def test_gemini_schema_has_no_additional_properties(self):
         schema = ai_evaluator_service.GeminiAiEvaluation.model_json_schema()

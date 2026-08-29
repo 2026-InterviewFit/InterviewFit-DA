@@ -1,0 +1,69 @@
+import os
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from app.speech_coaching.services import speech_service
+
+
+class SpeechServiceQuestionForwardingTest(unittest.TestCase):
+    def test_original_question_is_forwarded_without_changing_response_shape(self):
+        question = "입사 후 원하지 않는 부서에 배치된다면 어떻게 하겠습니까?"
+        ai_result = {
+            "star_score": {"S": 5, "T": 5, "A": 5, "R": 5},
+            "feedback": "실제 답변에 대한 개선 피드백입니다.",
+            "keywords": ["적응", "성장"],
+            "model_answer": "저는 우선 회사의 배치 이유를 이해하고 업무에 적응하겠습니다.",
+        }
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as video:
+            video_path = video.name
+
+        try:
+            with (
+                patch.object(
+                    speech_service,
+                    "extract_audio_and_get_duration",
+                    return_value=(True, 10.0),
+                ),
+                patch.object(
+                    speech_service,
+                    "analyze_audio_metrics",
+                    return_value={
+                        "total_silence_seconds": 1.0,
+                        "pause_rate_percent": 10.0,
+                        "critical_silence_count": 0,
+                    },
+                ),
+                patch.object(
+                    speech_service,
+                    "run_free_whisper_stt",
+                    return_value="사용자 답변",
+                ),
+                patch.object(
+                    speech_service.ai_evaluator_service,
+                    "evaluate_interview_content",
+                    return_value=ai_result,
+                ) as evaluate,
+            ):
+                response = speech_service.process_interview_analysis(
+                    source_type="local",
+                    source_value=video_path,
+                    job_category="백엔드",
+                    interview_id=1,
+                    original_question=question,
+                )
+
+            evaluate.assert_called_once_with("사용자 답변", "백엔드", question)
+            body = response.model_dump()
+            self.assertEqual(body["original_question"], question)
+            self.assertEqual(body["ai_evaluation"]["model_answer"], ai_result["model_answer"])
+            self.assertEqual(
+                set(body["ai_evaluation"]),
+                {"star_score", "feedback", "keywords", "model_answer"},
+            )
+        finally:
+            os.unlink(video_path)
+
+
+if __name__ == "__main__":
+    unittest.main()
