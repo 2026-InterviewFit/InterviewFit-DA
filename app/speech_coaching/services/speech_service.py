@@ -20,6 +20,39 @@ from app.common.exceptions.status_code import StatusCode
 
 logger = logging.getLogger(__name__)
 
+# 발화 점수 가중치
+PACE_SCORE_WEIGHT = 0.35
+SILENCE_SCORE_WEIGHT = 0.30
+HABIT_SCORE_WEIGHT = 0.35
+
+# 발화 속도(CPS) 점수 구간
+PACE_HARD_MIN_CPS = 0.5
+PACE_ACCEPTABLE_MIN_CPS = 1.5
+PACE_IDEAL_MIN_CPS = 2.5
+PACE_IDEAL_MAX_CPS = 4.5
+PACE_ACCEPTABLE_MAX_CPS = 6.0
+PACE_HARD_MAX_CPS = 8.0
+PACE_ACCEPTABLE_BOUNDARY_SCORE = 70.0
+
+# 침묵 점수 구간과 긴 침묵 감점
+PAUSE_IDEAL_MAX_PERCENT = 10.0
+PAUSE_ACCEPTABLE_MAX_PERCENT = 40.0
+PAUSE_HARD_MAX_PERCENT = 70.0
+PAUSE_ACCEPTABLE_BOUNDARY_SCORE = 40.0
+CRITICAL_SILENCE_PENALTY = 12.0
+
+# 분당 습관어 및 반복 표현 발생률 점수 구간
+HABIT_IDEAL_MAX_PER_MINUTE = 1.0
+HABIT_ACCEPTABLE_MAX_PER_MINUTE = 5.0
+HABIT_HARD_MAX_PER_MINUTE = 12.0
+HABIT_ACCEPTABLE_BOUNDARY_SCORE = 70.0
+
+# 점수 산출에 필요한 최소 발화량
+MIN_SCORABLE_DURATION_SECONDS = 3.0
+MIN_SCORABLE_CHARACTER_COUNT = 5
+MIN_SCORABLE_WORD_COUNT = 2
+STT_FAILURE_RESULT = "STT 변환 실패"
+
 # Whisper AI 모델 로드 (서버 시작 시 1회)
 WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "medium")
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
@@ -296,7 +329,7 @@ def run_free_whisper_stt(audio_path: str) -> str:
 
     except Exception as e:
         logger.error("STT 변환 실패: %s", e)
-        return "STT 변환 실패"
+        return STT_FAILURE_RESULT
 
 
 # 스피치 지표 종합 계산
@@ -355,6 +388,176 @@ def analyze_speech_metrics(
                 round(cps, 2),
         },
     }
+
+
+def _interpolate_score(
+    value: float,
+    start: float,
+    end: float,
+    start_score: float,
+    end_score: float,
+) -> float:
+    """두 임계값 사이 점수를 선형 보간한다."""
+    if end == start:
+        return end_score
+
+    ratio = (value - start) / (end - start)
+    return start_score + ratio * (end_score - start_score)
+
+
+def calculate_pace_score(characters_per_second: float) -> int:
+    """면접 답변의 CPS를 0~100 점수로 변환한다."""
+    cps = max(0.0, characters_per_second)
+
+    if PACE_IDEAL_MIN_CPS <= cps <= PACE_IDEAL_MAX_CPS:
+        return 100
+    if cps <= PACE_HARD_MIN_CPS or cps >= PACE_HARD_MAX_CPS:
+        return 0
+    if cps < PACE_ACCEPTABLE_MIN_CPS:
+        score = _interpolate_score(
+            cps,
+            PACE_HARD_MIN_CPS,
+            PACE_ACCEPTABLE_MIN_CPS,
+            0.0,
+            PACE_ACCEPTABLE_BOUNDARY_SCORE,
+        )
+    elif cps < PACE_IDEAL_MIN_CPS:
+        score = _interpolate_score(
+            cps,
+            PACE_ACCEPTABLE_MIN_CPS,
+            PACE_IDEAL_MIN_CPS,
+            PACE_ACCEPTABLE_BOUNDARY_SCORE,
+            100.0,
+        )
+    elif cps <= PACE_ACCEPTABLE_MAX_CPS:
+        score = _interpolate_score(
+            cps,
+            PACE_IDEAL_MAX_CPS,
+            PACE_ACCEPTABLE_MAX_CPS,
+            100.0,
+            PACE_ACCEPTABLE_BOUNDARY_SCORE,
+        )
+    else:
+        score = _interpolate_score(
+            cps,
+            PACE_ACCEPTABLE_MAX_CPS,
+            PACE_HARD_MAX_CPS,
+            PACE_ACCEPTABLE_BOUNDARY_SCORE,
+            0.0,
+        )
+
+    return round(max(0.0, min(100.0, score)))
+
+
+def calculate_silence_score(
+    pause_rate_percent: float,
+    critical_silence_count: int,
+) -> int:
+    """침묵 비율과 3초 이상 침묵 횟수를 점수화한다."""
+    pause_rate = max(0.0, pause_rate_percent)
+
+    if pause_rate <= PAUSE_IDEAL_MAX_PERCENT:
+        score = 100.0
+    elif pause_rate <= PAUSE_ACCEPTABLE_MAX_PERCENT:
+        score = _interpolate_score(
+            pause_rate,
+            PAUSE_IDEAL_MAX_PERCENT,
+            PAUSE_ACCEPTABLE_MAX_PERCENT,
+            100.0,
+            PAUSE_ACCEPTABLE_BOUNDARY_SCORE,
+        )
+    elif pause_rate < PAUSE_HARD_MAX_PERCENT:
+        score = _interpolate_score(
+            pause_rate,
+            PAUSE_ACCEPTABLE_MAX_PERCENT,
+            PAUSE_HARD_MAX_PERCENT,
+            PAUSE_ACCEPTABLE_BOUNDARY_SCORE,
+            0.0,
+        )
+    else:
+        score = 0.0
+
+    score -= max(0, critical_silence_count) * CRITICAL_SILENCE_PENALTY
+    return round(max(0.0, min(100.0, score)))
+
+
+def calculate_habit_score(
+    filler_count: int,
+    repeated_expressions: list[dict],
+    duration_seconds: float,
+) -> int:
+    """습관어와 반복 표현을 분당 발생률로 정규화해 점수화한다."""
+    repeated_count = sum(
+        max(0, expression.get("count", 0))
+        for expression in repeated_expressions
+    )
+    occurrence_count = max(0, filler_count) + repeated_count
+    occurrences_per_minute = occurrence_count * 60.0 / duration_seconds
+
+    if occurrences_per_minute <= HABIT_IDEAL_MAX_PER_MINUTE:
+        score = 100.0
+    elif occurrences_per_minute <= HABIT_ACCEPTABLE_MAX_PER_MINUTE:
+        score = _interpolate_score(
+            occurrences_per_minute,
+            HABIT_IDEAL_MAX_PER_MINUTE,
+            HABIT_ACCEPTABLE_MAX_PER_MINUTE,
+            100.0,
+            HABIT_ACCEPTABLE_BOUNDARY_SCORE,
+        )
+    elif occurrences_per_minute < HABIT_HARD_MAX_PER_MINUTE:
+        score = _interpolate_score(
+            occurrences_per_minute,
+            HABIT_ACCEPTABLE_MAX_PER_MINUTE,
+            HABIT_HARD_MAX_PER_MINUTE,
+            HABIT_ACCEPTABLE_BOUNDARY_SCORE,
+            0.0,
+        )
+    else:
+        score = 0.0
+
+    return round(max(0.0, min(100.0, score)))
+
+
+def is_speech_data_scorable(
+    stt_text: str,
+    duration_seconds: float,
+) -> bool:
+    """너무 짧거나 실제 발화가 거의 없는 데이터인지 확인한다."""
+    words = _tokenize_speech_words(stt_text)
+    character_count = sum(len(word) for word in words)
+    word_count = len(words)
+    return (
+        stt_text.strip() != STT_FAILURE_RESULT
+        and duration_seconds >= MIN_SCORABLE_DURATION_SECONDS
+        and character_count >= MIN_SCORABLE_CHARACTER_COUNT
+        and word_count >= MIN_SCORABLE_WORD_COUNT
+    )
+
+
+def calculate_speech_score(
+    speech_metrics: dict,
+    audio_metrics: dict,
+    duration_seconds: float,
+) -> int:
+    """발화 속도, 침묵, 습관어 점수를 가중 합산한다."""
+    pace_score = calculate_pace_score(
+        speech_metrics["speech_pace_analysis"]["characters_per_second"]
+    )
+    silence_score = calculate_silence_score(
+        audio_metrics["pause_rate_percent"],
+        audio_metrics["critical_silence_count"],
+    )
+    habit_score = calculate_habit_score(
+        speech_metrics["filler_word_analysis"]["total_count"],
+        speech_metrics["repeated_expressions"],
+        duration_seconds,
+    )
+    score = (
+        pace_score * PACE_SCORE_WEIGHT
+        + silence_score * SILENCE_SCORE_WEIGHT
+        + habit_score * HABIT_SCORE_WEIGHT
+    )
+    return round(max(0.0, min(100.0, score)))
 
 
 # 전체 분석 파이프라인
@@ -441,6 +644,23 @@ def process_interview_analysis(
             temp_audio
         )
 
+        if not is_speech_data_scorable(stt_text, duration):
+            raise CustomException(
+                status=StatusCode.BAD_REQUEST,
+                code=ErrorCode.INSUFFICIENT_SPEECH_DATA,
+                message="발화 분석 점수를 계산하기에 음성 데이터가 부족합니다.",
+            )
+
+        metrics = analyze_speech_metrics(
+            stt_text,
+            duration,
+        )
+        speech_score = calculate_speech_score(
+            metrics,
+            audio_metrics,
+            duration,
+        )
+
         # ==========================================
         # 외부 학습 AI 호출 확인용 로그
         # ==========================================
@@ -460,11 +680,6 @@ def process_interview_analysis(
             "외부 면접 답변 평가 AI 호출 완료: "
             "external_analysis_present=%s",
             external_analysis is not None,
-        )
-
-        metrics = analyze_speech_metrics(
-            stt_text,
-            duration,
         )
 
         # 3. Gemini 평가
@@ -563,6 +778,8 @@ def process_interview_analysis(
                     ]
                 ),
             ),
+
+            speech_score=speech_score,
 
             ai_evaluation=ai_evaluation,
 
