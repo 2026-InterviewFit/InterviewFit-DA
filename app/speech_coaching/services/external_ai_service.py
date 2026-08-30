@@ -1,4 +1,6 @@
 import logging
+import threading
+import time
 
 import httpx
 from pydantic import ValidationError
@@ -8,6 +10,13 @@ from app.speech_coaching.schemas.speech_schema import ExternalAiAnalysis
 
 
 logger = logging.getLogger(__name__)
+
+_max_concurrent_requests = max(
+    1,
+    settings.AI_SERVER_MAX_CONCURRENT_REQUESTS,
+)
+_request_semaphore = threading.BoundedSemaphore(_max_concurrent_requests)
+_RETRY_BACKOFF_SECONDS = 0.5
 
 
 def analyze_interview_answer(
@@ -35,29 +44,52 @@ def analyze_interview_answer(
     )
 
     try:
-        logger.info("외부 면접 답변 평가 AI POST /analyze 호출 시작")
-        response = httpx.post(
-            endpoint,
-            json={
-                "question": safe_question,
-                "answer": safe_answer,
-            },
-            timeout=timeout,
-        )
-        logger.info(
-            "외부 면접 답변 평가 AI POST /analyze 응답: status=%s",
-            response.status_code,
-        )
-        response.raise_for_status()
-        result = ExternalAiAnalysis.model_validate(response.json())
-        logger.info(
-            "외부 면접 답변 평가 AI 응답 검증 성공: "
-            "star_present=%s strengths_count=%s improvements_count=%s",
-            result.star is not None,
-            len(result.strengths),
-            len(result.improvements),
-        )
-        return result
+        with _request_semaphore:
+            retry_count = max(0, settings.AI_SERVER_READ_TIMEOUT_RETRIES)
+            total_attempts = retry_count + 1
+
+            for attempt in range(1, total_attempts + 1):
+                try:
+                    logger.info(
+                        "외부 면접 답변 평가 AI POST /analyze 호출 시작: "
+                        "attempt=%s total_attempts=%s",
+                        attempt,
+                        total_attempts,
+                    )
+                    response = httpx.post(
+                        endpoint,
+                        json={
+                            "question": safe_question,
+                            "answer": safe_answer,
+                        },
+                        timeout=timeout,
+                    )
+                    logger.info(
+                        "외부 면접 답변 평가 AI POST /analyze 응답: status=%s",
+                        response.status_code,
+                    )
+                    response.raise_for_status()
+                    result = ExternalAiAnalysis.model_validate(response.json())
+                    logger.info(
+                        "외부 면접 답변 평가 AI 응답 검증 성공: "
+                        "star_present=%s strengths_count=%s improvements_count=%s",
+                        result.star is not None,
+                        len(result.strengths),
+                        len(result.improvements),
+                    )
+                    return result
+                except httpx.ReadTimeout as exc:
+                    if attempt >= total_attempts:
+                        raise
+
+                    logger.warning(
+                        "외부 면접 답변 평가 AI read timeout 재시도: "
+                        "error_type=%s attempt=%s next_attempt=%s",
+                        type(exc).__name__,
+                        attempt,
+                        attempt + 1,
+                    )
+                    time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
     except httpx.HTTPStatusError as exc:
         logger.warning(
             "외부 면접 답변 평가 AI가 오류 상태를 반환했습니다: status=%s",
