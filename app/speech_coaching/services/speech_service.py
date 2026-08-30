@@ -7,7 +7,7 @@ import librosa
 import yt_dlp
 from faster_whisper import WhisperModel
 from typing import Optional
-from app.speech_coaching.services import ai_evaluator_service
+from app.speech_coaching.services import ai_evaluator_service, external_ai_service
 from app.speech_coaching.infra import s3_client
 from app.speech_coaching.schemas.speech_schema import (
     SpeechReportResponse, AiEvaluation,
@@ -21,9 +21,19 @@ from app.common.exceptions.status_code import StatusCode
 logger = logging.getLogger(__name__)
 
 # Whisper AI 모델 로드 (서버 시작 시 1회)
-logger.info("무료 Whisper AI 모델을 로드하는 중입니다...")
-#model = WhisperModel("base", device="cpu", compute_type="float32")
-model = WhisperModel("small", device="cpu", compute_type="float32")
+WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "medium")
+WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+
+logger.info(
+    "무료 Whisper AI 모델을 로드하는 중입니다: model=%s, compute_type=%s",
+    WHISPER_MODEL_SIZE,
+    WHISPER_COMPUTE_TYPE,
+)
+model = WhisperModel(
+    WHISPER_MODEL_SIZE,
+    device="cpu",
+    compute_type=WHISPER_COMPUTE_TYPE,
+)
 logger.info("AI 모델 로드 완료!")
 
 
@@ -100,15 +110,30 @@ def analyze_audio_metrics(audio_path: str) -> dict:
         }
 
 
+def _tokenize_speech_words(text: str) -> list[str]:
+    """문장부호와 무관하게 한국어/영문 발화 단어를 추출한다."""
+    return re.findall(r"[가-힣A-Za-z]+", text)
+
+
 # 연속으로 같은 단어가 반복되는 패턴 탐지
 def find_consecutive_repeats(text: str, min_repeat: int = 2) -> list[dict]:
-    pattern = re.compile(r"([가-힣A-Za-z]+)(?:[,]?\s+\1\b)+")
+    words = _tokenize_speech_words(text)
     results = []
-    for m in pattern.finditer(text):
-        word = m.group(1)
-        count = len(re.findall(re.escape(word), m.group(0)))
+
+    index = 0
+    while index < len(words):
+        word = words[index]
+        next_index = index + 1
+
+        while next_index < len(words) and words[next_index] == word:
+            next_index += 1
+
+        count = next_index - index
         if count >= min_repeat:
             results.append({"expression": word, "count": count})
+
+        index = next_index
+
     return results
 
 
@@ -125,7 +150,7 @@ def detect_repeated_expressions(stt_text: str, min_length: int = 2, min_count: i
         consecutive = find_consecutive_repeats(stt_text, min_repeat=min_count)
         consecutive_words = {item["expression"] for item in consecutive}
 
-        words = re.findall(r"[가-힣A-Za-z]+", stt_text)
+        words = _tokenize_speech_words(stt_text)
         candidates = [
             w for w in words
             if w not in filler_targets
@@ -208,9 +233,9 @@ def run_free_whisper_stt(audio_path: str) -> str:
 
 # 스피치 지표 종합 계산
 def analyze_speech_metrics(stt_text: str, duration_seconds: float) -> dict:
-    padded_text = f" {stt_text} "
     filler_targets = ["음", "어", "그", "이제", "약간", "저"]
-    filler_counts = {word: padded_text.count(f" {word} ") + padded_text.count(f" {word},") for word in filler_targets}
+    word_counts = Counter(_tokenize_speech_words(stt_text))
+    filler_counts = {word: word_counts[word] for word in filler_targets}
     total_filler_count = sum(filler_counts.values())
 
     cps = len(stt_text.replace(" ", "")) / duration_seconds if duration_seconds > 0 else 0.0
@@ -281,6 +306,10 @@ def process_interview_analysis(
 
         audio_metrics = analyze_audio_metrics(temp_audio)
         stt_text = run_free_whisper_stt(temp_audio)
+        external_analysis = external_ai_service.analyze_interview_answer(
+            question=original_question,
+            answer=stt_text,
+        )
         metrics = analyze_speech_metrics(stt_text, duration)
 
         # 3. Gemini 평가
@@ -288,6 +317,7 @@ def process_interview_analysis(
             stt_text,
             job_category,
             original_question,
+            external_analysis,
         )
         if not isinstance(ai_res, dict):
             raise CustomException(
@@ -325,6 +355,7 @@ def process_interview_analysis(
                 critical_silence_count=audio_metrics["critical_silence_count"],
             ),
             ai_evaluation=ai_evaluation,
+            external_ai_analysis=external_analysis,
             #model_answer=ai_res.get("model_answer", "")
         )
     except CustomException:
