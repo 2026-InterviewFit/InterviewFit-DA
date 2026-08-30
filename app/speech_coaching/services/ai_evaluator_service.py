@@ -10,7 +10,7 @@ from app.common.exceptions.custom_exception import CustomException
 from app.common.exceptions.error_code import ErrorCode
 from app.common.exceptions.status_code import StatusCode
 from app.core.config import settings
-from app.speech_coaching.schemas.speech_schema import AiEvaluation
+from app.speech_coaching.schemas.speech_schema import AiEvaluation, ExternalAiAnalysis
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +328,7 @@ def evaluate_interview_content(
     script: str,
     job_category: str,
     original_question: str | None = None,
+    external_analysis: ExternalAiAnalysis | None = None,
 ) -> dict[str, Any]:
     """
     사용자의 면접 답변을 Gemini로 평가한다.
@@ -346,6 +347,25 @@ def evaluate_interview_content(
     answer = (
         script or ""
     ).strip()
+
+    external_analysis_section = ""
+
+    if external_analysis is not None:
+        external_analysis_json = json.dumps(
+            external_analysis.model_dump(mode="json"),
+            ensure_ascii=False,
+        )
+
+        external_analysis_section = f"""
+[외부 면접 답변 평가 AI의 참고 분석]
+{external_analysis_json}
+
+참고 분석 사용 원칙:
+1. 외부 AI 결과는 평가를 돕는 참고 자료일 뿐입니다.
+2. 원본 면접 질문과 지원자가 실제로 말한 답변을 최우선 근거로 판단하세요.
+3. 외부 AI 결과를 그대로 복사하지 말고 직접 종합하여 평가하세요.
+4. 외부 AI 결과가 원본 질문 또는 실제 답변과 충돌하면 원본 질문과 실제 답변을 우선하세요.
+"""
 
     prompt = f"""
 당신은 {job_category} 직무의 전문 면접관입니다.
@@ -438,6 +458,8 @@ model_answer는 오직 실제 면접에서 말할 수 있는
 
 지원자가 실제로 말한 답변:
 {answer if answer else "(빈 답변)"}
+
+{external_analysis_section}
 """
 
     config = types.GenerateContentConfig(
@@ -458,10 +480,11 @@ model_answer는 오직 실제 면접에서 말할 수 있는
 
     logger.info(
         "Gemini AI 평가 요청: "
-        "model=%s answer_length=%d question_length=%d",
+        "model=%s answer_length=%d question_length=%d external_analysis=%s",
         model_name,
         len(answer),
         len(question),
+        external_analysis is not None,
     )
 
     try:
@@ -570,7 +593,7 @@ model_answer는 오직 실제 면접에서 말할 수 있는
 
         logger.info(
             "Gemini AI 평가 성공: "
-            "model=%s star_score=%s keywords_count=%d",
+            "model=%s star_score=%s keywords_count=%d external_analysis=%s",
             model_name,
             result.get(
                 "star_score"
@@ -581,6 +604,7 @@ model_answer는 오직 실제 면접에서 말할 수 있는
                     [],
                 )
             ),
+            external_analysis is not None,
         )
 
         return result
