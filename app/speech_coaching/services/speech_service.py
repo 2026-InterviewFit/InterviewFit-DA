@@ -306,13 +306,25 @@ def process_interview_analysis(
 
         audio_metrics = analyze_audio_metrics(temp_audio)
         stt_text = run_free_whisper_stt(temp_audio)
+        logger.info(
+            "Whisper STT 완료 후 외부 면접 답변 평가 AI 호출: "
+            "external_ai_call=true"
+        )
         external_analysis = external_ai_service.analyze_interview_answer(
             question=original_question,
             answer=stt_text,
         )
+        logger.info(
+            "외부 면접 답변 평가 AI 호출 완료: external_analysis_present=%s",
+            external_analysis is not None,
+        )
         metrics = analyze_speech_metrics(stt_text, duration)
 
         # 3. Gemini 평가
+        logger.info(
+            "Gemini 평가 호출 직전: external_analysis_present=%s",
+            external_analysis is not None,
+        )
         ai_res = ai_evaluator_service.evaluate_interview_content(
             stt_text,
             job_category,
@@ -339,7 +351,7 @@ def process_interview_analysis(
             ) from e
 
         # 4. 음량 분석을 제외한 응답 스키마 매핑 및 반환
-        return SpeechReportResponse(
+        response = SpeechReportResponse(
             interview_id=interview_id,
             interview_answer_id=interview_answer_id,
             question_id=question_id,
@@ -358,6 +370,11 @@ def process_interview_analysis(
             external_ai_analysis=external_analysis,
             #model_answer=ai_res.get("model_answer", "")
         )
+        logger.info(
+            "SpeechReportResponse 생성 완료: external_ai_analysis_present=%s",
+            response.external_ai_analysis is not None,
+        )
+        return response
     except CustomException:
         raise
     except Exception as e:
