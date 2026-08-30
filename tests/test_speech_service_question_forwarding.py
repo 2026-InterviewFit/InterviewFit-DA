@@ -67,6 +67,18 @@ class SpeechServiceQuestionForwardingTest(unittest.TestCase):
             body = response.model_dump()
             self.assertEqual(body["original_question"], question)
             self.assertIsNone(body["external_ai_analysis"])
+            self.assertIn("speech_score", body)
+            self.assertTrue(0 <= body["speech_score"] <= 100)
+            self.assertTrue(
+                {
+                    "text_script",
+                    "filler_word_analysis",
+                    "repeated_expressions",
+                    "speech_pace_analysis",
+                    "silence_analysis",
+                    "ai_evaluation",
+                }.issubset(body)
+            )
             self.assertEqual(body["ai_evaluation"]["model_answer"], ai_result["model_answer"])
             self.assertEqual(
                 set(body["ai_evaluation"]),
@@ -143,6 +155,28 @@ class SpeechServiceQuestionForwardingTest(unittest.TestCase):
 
 
 class SpeechMetricsTest(unittest.TestCase):
+    @staticmethod
+    def _speech_metrics(
+        cps: float,
+        filler_count: int = 0,
+        repeated_count: int = 0,
+    ) -> dict:
+        repeated_expressions = []
+        if repeated_count:
+            repeated_expressions.append(
+                {"expression": "반복", "count": repeated_count}
+            )
+
+        return {
+            "speech_pace_analysis": {
+                "characters_per_second": cps,
+            },
+            "filler_word_analysis": {
+                "total_count": filler_count,
+            },
+            "repeated_expressions": repeated_expressions,
+        }
+
     def test_filler_words_are_counted_regardless_of_punctuation(self):
         metrics = speech_service.analyze_speech_metrics(
             "음, 저는 어... 그! 이제 시작하겠습니다. 음?",
@@ -175,6 +209,87 @@ class SpeechMetricsTest(unittest.TestCase):
                 {"expression": "프로젝트", "count": 2},
                 {"expression": "네", "count": 2},
             ],
+        )
+
+    def test_speech_score_is_always_between_zero_and_one_hundred(self):
+        cases = [
+            (0.0, 100.0, 10, 30),
+            (3.5, 5.0, 0, 0),
+            (10.0, 0.0, 0, 0),
+        ]
+
+        for cps, pause_rate, critical_count, filler_count in cases:
+            with self.subTest(cps=cps, pause_rate=pause_rate):
+                score = speech_service.calculate_speech_score(
+                    self._speech_metrics(cps, filler_count),
+                    {
+                        "pause_rate_percent": pause_rate,
+                        "critical_silence_count": critical_count,
+                    },
+                    duration_seconds=60.0,
+                )
+                self.assertTrue(0 <= score <= 100)
+
+    def test_ideal_pace_scores_higher_than_slow_or_fast_pace(self):
+        ideal_score = speech_service.calculate_pace_score(3.5)
+        slow_score = speech_service.calculate_pace_score(1.0)
+        fast_score = speech_service.calculate_pace_score(7.0)
+
+        self.assertGreater(ideal_score, slow_score)
+        self.assertGreater(ideal_score, fast_score)
+
+    def test_silence_score_decreases_with_pause_and_critical_silence(self):
+        stable_score = speech_service.calculate_silence_score(8.0, 0)
+        high_pause_score = speech_service.calculate_silence_score(45.0, 0)
+        repeated_long_pause_score = speech_service.calculate_silence_score(45.0, 2)
+
+        self.assertGreater(stable_score, high_pause_score)
+        self.assertGreater(high_pause_score, repeated_long_pause_score)
+
+    def test_habit_score_decreases_as_fillers_and_repeats_increase(self):
+        clean_score = speech_service.calculate_habit_score(0, [], 60.0)
+        filler_score = speech_service.calculate_habit_score(4, [], 60.0)
+        repeated_score = speech_service.calculate_habit_score(
+            4,
+            [{"expression": "반복", "count": 4}],
+            60.0,
+        )
+
+        self.assertGreater(clean_score, filler_score)
+        self.assertGreater(filler_score, repeated_score)
+
+    def test_habit_occurrences_are_normalized_by_duration(self):
+        short_answer_score = speech_service.calculate_habit_score(
+            2,
+            [],
+            duration_seconds=20.0,
+        )
+        long_answer_score = speech_service.calculate_habit_score(
+            2,
+            [],
+            duration_seconds=120.0,
+        )
+
+        self.assertGreater(long_answer_score, short_answer_score)
+
+    def test_too_short_or_nearly_empty_speech_is_not_scorable(self):
+        self.assertFalse(
+            speech_service.is_speech_data_scorable("짧음", 2.0)
+        )
+        self.assertFalse(
+            speech_service.is_speech_data_scorable("음", 30.0)
+        )
+        self.assertFalse(
+            speech_service.is_speech_data_scorable(
+                speech_service.STT_FAILURE_RESULT,
+                30.0,
+            )
+        )
+        self.assertTrue(
+            speech_service.is_speech_data_scorable(
+                "프로젝트 경험을 설명했습니다",
+                10.0,
+            )
         )
 
 

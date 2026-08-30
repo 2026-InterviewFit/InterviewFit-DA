@@ -164,6 +164,12 @@ class SpeechReportResponse(BaseModel):
 
     silence_analysis: SilenceAnalysis
 
+    speech_score: int = Field(
+        ...,
+        ge=0,
+        le=100,
+    )
+
     ai_evaluation: AiEvaluation
 
     external_ai_analysis: Optional[ExternalAiAnalysis] = None
