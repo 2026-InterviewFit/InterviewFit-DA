@@ -7,7 +7,7 @@ import librosa
 import yt_dlp
 from faster_whisper import WhisperModel
 from typing import Optional
-from app.speech_coaching.services import ai_evaluator_service
+from app.speech_coaching.services import ai_evaluator_service, external_ai_service
 from app.speech_coaching.infra import s3_client
 from app.speech_coaching.schemas.speech_schema import (
     SpeechReportResponse, AiEvaluation,
@@ -306,6 +306,10 @@ def process_interview_analysis(
 
         audio_metrics = analyze_audio_metrics(temp_audio)
         stt_text = run_free_whisper_stt(temp_audio)
+        external_analysis = external_ai_service.analyze_interview_answer(
+            question=original_question,
+            answer=stt_text,
+        )
         metrics = analyze_speech_metrics(stt_text, duration)
 
         # 3. Gemini 평가
@@ -313,6 +317,7 @@ def process_interview_analysis(
             stt_text,
             job_category,
             original_question,
+            external_analysis,
         )
         if not isinstance(ai_res, dict):
             raise CustomException(
@@ -350,6 +355,7 @@ def process_interview_analysis(
                 critical_silence_count=audio_metrics["critical_silence_count"],
             ),
             ai_evaluation=ai_evaluation,
+            external_ai_analysis=external_analysis,
             #model_answer=ai_res.get("model_answer", "")
         )
     except CustomException:
