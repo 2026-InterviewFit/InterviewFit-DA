@@ -54,7 +54,9 @@ class ExternalAiServiceTest(unittest.TestCase):
         )
         with (
             patch.object(external_ai_service.settings, "AI_SERVER_URL", "http://external-ai"),
+            patch.object(external_ai_service.settings, "AI_SERVER_READ_TIMEOUT_RETRIES", 2),
             patch.object(external_ai_service.httpx, "post", side_effect=timeout),
+            patch.object(external_ai_service.time, "sleep") as sleep,
             self.assertLogs(external_ai_service.logger, level="WARNING") as logs,
         ):
             result = external_ai_service.analyze_interview_answer(question, answer)
@@ -63,6 +65,28 @@ class ExternalAiServiceTest(unittest.TestCase):
         output = "\n".join(logs.output)
         self.assertNotIn(question, output)
         self.assertNotIn(answer, output)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_read_timeout_is_retried_and_later_success_is_returned(self):
+        timeout = httpx.ReadTimeout(
+            "timed out",
+            request=httpx.Request("POST", "http://external-ai/analyze"),
+        )
+        with (
+            patch.object(external_ai_service.settings, "AI_SERVER_URL", "http://external-ai"),
+            patch.object(external_ai_service.settings, "AI_SERVER_READ_TIMEOUT_RETRIES", 2),
+            patch.object(
+                external_ai_service.httpx,
+                "post",
+                side_effect=[timeout, _response(json=VALID_RESPONSE)],
+            ) as post,
+            patch.object(external_ai_service.time, "sleep") as sleep,
+        ):
+            result = external_ai_service.analyze_interview_answer("질문", "답변")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(post.call_count, 2)
+        sleep.assert_called_once_with(external_ai_service._RETRY_BACKOFF_SECONDS)
 
     def test_http_error_status_returns_none(self):
         for status_code in (400, 500):

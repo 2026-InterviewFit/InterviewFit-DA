@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     # 면접 답변 보조 평가 AI. URL이 비어 있으면 호출하지 않고 기존 Gemini 평가만 수행한다.
     AI_SERVER_URL: str = ""
     AI_SERVER_CONNECT_TIMEOUT_SECONDS: float = 3.0
-    AI_SERVER_READ_TIMEOUT_SECONDS: float = 10.0
+    AI_SERVER_READ_TIMEOUT_SECONDS: float = 45.0
+    AI_SERVER_READ_TIMEOUT_RETRIES: int = 2
+    AI_SERVER_MAX_CONCURRENT_REQUESTS: int = 3
 
     # 팀원 video_storage 코드와 eye-blink가 함께 사용할 MinIO 설정.
     # Local: localhost:9000 / Docker: minio:9000
