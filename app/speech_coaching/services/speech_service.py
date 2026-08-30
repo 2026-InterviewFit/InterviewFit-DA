@@ -21,7 +21,7 @@ from app.common.exceptions.status_code import StatusCode
 logger = logging.getLogger(__name__)
 
 # Whisper AI 모델 로드 (서버 시작 시 1회)
-WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "medium")
+WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "small")
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 
 logger.info(

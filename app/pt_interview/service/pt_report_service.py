@@ -63,6 +63,14 @@ class PtReportService:
                 None,
             )
 
+            print(
+                "\n========== [PT REPORT] GEMINI RAW RESPONSE =========="
+            )
+            print(response_text)
+            print(
+                "======================================================\n"
+            )
+
             if not response_text:
                 raise ValueError(
                     "Gemini 응답 본문이 비어 있습니다."
