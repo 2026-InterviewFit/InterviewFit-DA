@@ -644,22 +644,32 @@ def process_interview_analysis(
             temp_audio
         )
 
-        if not is_speech_data_scorable(stt_text, duration):
+        if stt_text.strip() == STT_FAILURE_RESULT:
             raise CustomException(
-                status=StatusCode.BAD_REQUEST,
-                code=ErrorCode.INSUFFICIENT_SPEECH_DATA,
-                message="발화 분석 점수를 계산하기에 음성 데이터가 부족합니다.",
+                status=StatusCode.INTERNAL_SERVER_ERROR,
+                code=ErrorCode.SPEECH_ANALYSIS_FAILED,
+                message="Whisper STT 변환에 실패했습니다.",
             )
 
         metrics = analyze_speech_metrics(
             stt_text,
             duration,
         )
-        speech_score = calculate_speech_score(
-            metrics,
-            audio_metrics,
-            duration,
-        )
+
+        if is_speech_data_scorable(stt_text, duration):
+            speech_score = calculate_speech_score(
+                metrics,
+                audio_metrics,
+                duration,
+            )
+            speech_score_status = "SCORED"
+            speech_score_reason = None
+        else:
+            speech_score = None
+            speech_score_status = "INSUFFICIENT_DATA"
+            speech_score_reason = (
+                "발화 데이터가 부족하여 점수를 산출할 수 없습니다."
+            )
 
         # ==========================================
         # 외부 학습 AI 호출 확인용 로그
@@ -780,6 +790,8 @@ def process_interview_analysis(
             ),
 
             speech_score=speech_score,
+            speech_score_status=speech_score_status,
+            speech_score_reason=speech_score_reason,
 
             ai_evaluation=ai_evaluation,
 

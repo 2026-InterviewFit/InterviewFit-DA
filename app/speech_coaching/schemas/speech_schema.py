@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 
 # =========================================================
@@ -164,11 +164,18 @@ class SpeechReportResponse(BaseModel):
 
     silence_analysis: SilenceAnalysis
 
-    speech_score: int = Field(
-        ...,
+    speech_score: Optional[int] = Field(
+        default=None,
         ge=0,
         le=100,
     )
+
+    speech_score_status: Literal[
+        "SCORED",
+        "INSUFFICIENT_DATA",
+    ]
+
+    speech_score_reason: Optional[str] = None
 
     ai_evaluation: AiEvaluation
 

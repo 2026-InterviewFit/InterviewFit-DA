@@ -3,6 +3,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from app.common.exceptions.custom_exception import CustomException
+from app.common.exceptions.error_code import ErrorCode
+from app.common.exceptions.status_code import StatusCode
 from app.speech_coaching.schemas.speech_schema import ExternalAiAnalysis
 from app.speech_coaching.services import speech_service
 
@@ -69,6 +72,8 @@ class SpeechServiceQuestionForwardingTest(unittest.TestCase):
             self.assertIsNone(body["external_ai_analysis"])
             self.assertIn("speech_score", body)
             self.assertTrue(0 <= body["speech_score"] <= 100)
+            self.assertEqual(body["speech_score_status"], "SCORED")
+            self.assertIsNone(body["speech_score_reason"])
             self.assertTrue(
                 {
                     "text_script",
@@ -83,6 +88,112 @@ class SpeechServiceQuestionForwardingTest(unittest.TestCase):
             self.assertEqual(
                 set(body["ai_evaluation"]),
                 {"star_score", "feedback", "keywords", "model_answer"},
+            )
+        finally:
+            os.unlink(video_path)
+
+    def test_insufficient_speech_returns_response_with_null_score(self):
+        ai_result = {
+            "star_score": {"S": 5, "T": 5, "A": 5, "R": 5},
+            "feedback": "발화량이 적지만 내용 평가는 수행했습니다.",
+            "keywords": [],
+            "model_answer": "모범 답변입니다.",
+        }
+        cases = [
+            ("duration_under_three_seconds", 2.0, "충분한 발화 내용입니다"),
+            ("fewer_than_five_characters", 10.0, "나 너"),
+            ("fewer_than_two_words", 10.0, "안녕하세요"),
+        ]
+
+        for case_name, duration, stt_text in cases:
+            with self.subTest(case=case_name):
+                with tempfile.NamedTemporaryFile(
+                    suffix=".webm",
+                    delete=False,
+                ) as video:
+                    video_path = video.name
+
+                try:
+                    with (
+                        patch.object(
+                            speech_service,
+                            "extract_audio_and_get_duration",
+                            return_value=(True, duration),
+                        ),
+                        patch.object(
+                            speech_service,
+                            "analyze_audio_metrics",
+                            return_value={
+                                "total_silence_seconds": 1.0,
+                                "pause_rate_percent": 10.0,
+                                "critical_silence_count": 0,
+                            },
+                        ),
+                        patch.object(
+                            speech_service,
+                            "run_free_whisper_stt",
+                            return_value=stt_text,
+                        ),
+                        patch.object(
+                            speech_service.external_ai_service,
+                            "analyze_interview_answer",
+                            return_value=None,
+                        ),
+                        patch.object(
+                            speech_service.ai_evaluator_service,
+                            "evaluate_interview_content",
+                            return_value=ai_result,
+                        ) as evaluate,
+                    ):
+                        response = speech_service.process_interview_analysis(
+                            source_type="local",
+                            source_value=video_path,
+                            job_category="백엔드",
+                            interview_id=1,
+                        )
+
+                    body = response.model_dump()
+                    self.assertIsNone(body["speech_score"])
+                    self.assertEqual(
+                        body["speech_score_status"],
+                        "INSUFFICIENT_DATA",
+                    )
+                    self.assertIsNotNone(body["speech_score_reason"])
+                    self.assertEqual(body["text_script"], stt_text)
+                    self.assertIn("speech_pace_analysis", body)
+                    self.assertIn("silence_analysis", body)
+                    self.assertIn("filler_word_analysis", body)
+                    self.assertIn("repeated_expressions", body)
+                    self.assertIn("ai_evaluation", body)
+                    evaluate.assert_called_once()
+                finally:
+                    os.unlink(video_path)
+
+    def test_audio_extraction_failure_still_raises_http_error(self):
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as video:
+            video_path = video.name
+
+        try:
+            with patch.object(
+                speech_service,
+                "extract_audio_and_get_duration",
+                return_value=(False, 0.0),
+            ):
+                with self.assertRaises(CustomException) as raised:
+                    speech_service.process_interview_analysis(
+                        source_type="local",
+                        source_value=video_path,
+                        job_category="백엔드",
+                        interview_id=1,
+                    )
+
+            self.assertEqual(
+                raised.exception.status,
+                StatusCode.INTERNAL_SERVER_ERROR,
+            )
+            self.assertEqual(
+                raised.exception.code,
+                ErrorCode.AUDIO_EXTRACTION_FAILED,
             )
         finally:
             os.unlink(video_path)
