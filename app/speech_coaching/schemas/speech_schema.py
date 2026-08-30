@@ -57,6 +57,23 @@ class AiEvaluation(BaseModel):
 
 
 # =========================================================
+# 외부 면접 답변 평가 AI 결과
+# =========================================================
+
+class ExternalStarAnalysis(BaseModel):
+    situation: str
+    task: str
+    action: str
+    result: str
+
+
+class ExternalAiAnalysis(BaseModel):
+    star: ExternalStarAnalysis
+    strengths: List[str]
+    improvements: List[str]
+
+
+# =========================================================
 # 필러워드 분석
 # =========================================================
 
@@ -148,3 +165,5 @@ class SpeechReportResponse(BaseModel):
     silence_analysis: SilenceAnalysis
 
     ai_evaluation: AiEvaluation
+
+    external_ai_analysis: Optional[ExternalAiAnalysis] = None
