@@ -4,7 +4,10 @@ import traceback
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.video_storage.minio_downloader import resolve_video_path
+from app.video_storage.minio_downloader import (
+    cleanup_temp_video,
+    resolve_video_path,
+)
 from app.eye.eye_blinking.schemas.eye_schema import (
     BlinkAnalysisResponse,
     EyeBlinkingAnalyzeRequest,
@@ -66,29 +69,40 @@ def analyze_blinks_from_spring(request: EyeBlinkingAnalyzeRequest):
     """
     Spring Boot에서 전달한 videoUrl을 받아 눈 깜빡임을 분석한다.
 
-    현재 운영 흐름은 /api/eye-blinking/analyze를 사용한다.
-    /blinks는 이전 경로 호환용으로만 숨겨서 유지한다.
+    안정성을 위해 eye 분석은 MinIO 영상을 요청 전용 임시 파일로 내려받는다.
+    분석이 끝난 뒤에는 해당 임시 파일만 안전하게 삭제한다.
     """
+
+    video_path = None
+
     try:
-        video_path = resolve_video_path(request.video_url)
+        video_path = resolve_video_path(
+            request.video_url,
+            unique_temp=True,
+        )
+
         result = analyze_blinks_from_video(video_path)
         return build_blink_response(result)
 
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
-    except Exception as e:
+    except Exception as error:
         print("\n🚨 [눈 깜빡임 분석 치명적 오류 발생] 🚨")
-        traceback.print_exc() 
+        traceback.print_exc()
         print("=========================================\n")
-        
+
         raise HTTPException(
             status_code=500,
-            detail=f"분석 중 오류가 발생했습니다: {str(e)}",
-        )
+            detail=f"분석 중 오류가 발생했습니다: {str(error)}",
+        ) from error
+
+    finally:
+        if video_path:
+            cleanup_temp_video(video_path)
 
 
 @router.post(
@@ -97,10 +111,8 @@ def analyze_blinks_from_spring(request: EyeBlinkingAnalyzeRequest):
     include_in_schema=False,
 )
 async def analyze_eye_landmarks(image: UploadFile = File(...)):
-    """
-    이미지 1장에서 눈 랜드마크와 EAR 값을 추출하는 단독 테스트용 API.
-    운영 흐름에서는 호출되지 않으므로 Swagger 문서에 표시하지 않는다.
-    """
+    """이미지 1장에서 눈 랜드마크와 EAR 값을 추출하는 단독 테스트용 API."""
+
     validate_upload_file(
         upload_file=image,
         allowed_extensions=ALLOWED_IMAGE_EXTENSIONS,
@@ -113,14 +125,14 @@ async def analyze_eye_landmarks(image: UploadFile = File(...)):
     try:
         return extract_eye_landmarks_from_image(image_bytes)
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
-    except Exception as e:
+    except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"분석 중 오류가 발생했습니다: {str(e)}",
-        )
+            detail=f"분석 중 오류가 발생했습니다: {str(error)}",
+        ) from error
 
 
 @router.post(
@@ -129,13 +141,8 @@ async def analyze_eye_landmarks(image: UploadFile = File(...)):
     include_in_schema=False,
 )
 async def analyze_blinks_from_upload(video: UploadFile = File(...)):
-    """
-    Swagger나 단독 테스트용 업로드 방식 API.
-    운영 흐름에서는 호출되지 않으므로 Swagger 문서에 표시하지 않는다.
+    """Swagger나 단독 테스트용 업로드 방식 API."""
 
-    최종 FE/Spring 통합에서는 Spring이 MinIO에 영상을 저장한 뒤,
-    /api/eye-blinking/analyze에 videoUrl 또는 objectKey를 넘기는 방식을 사용한다.
-    """
     validate_upload_file(
         upload_file=video,
         allowed_extensions=ALLOWED_VIDEO_EXTENSIONS,
@@ -155,15 +162,25 @@ async def analyze_blinks_from_upload(video: UploadFile = File(...)):
         result = analyze_blinks_from_video(tmp_file_path)
         return build_blink_response(result)
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
-    except Exception as e:
+    except Exception as error:
+        print("\n🚨 [눈 깜빡임 업로드 분석 오류] 🚨")
+        traceback.print_exc()
+        print("=========================================\n")
+
         raise HTTPException(
             status_code=500,
-            detail=f"분석 중 오류가 발생했습니다: {str(e)}",
-        )
+            detail=f"분석 중 오류가 발생했습니다: {str(error)}",
+        ) from error
 
     finally:
         if tmp_file_path and os.path.exists(tmp_file_path):
-            os.remove(tmp_file_path)
+            try:
+                os.remove(tmp_file_path)
+            except OSError as error:
+                print(
+                    "[EyeBlinking 업로드 임시파일 삭제 실패] "
+                    f"path={tmp_file_path}, error={error}"
+                )
