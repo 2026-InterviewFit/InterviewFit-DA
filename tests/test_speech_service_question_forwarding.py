@@ -65,5 +65,41 @@ class SpeechServiceQuestionForwardingTest(unittest.TestCase):
             os.unlink(video_path)
 
 
+class SpeechMetricsTest(unittest.TestCase):
+    def test_filler_words_are_counted_regardless_of_punctuation(self):
+        metrics = speech_service.analyze_speech_metrics(
+            "음, 저는 어... 그! 이제 시작하겠습니다. 음?",
+            duration_seconds=10.0,
+        )
+
+        self.assertEqual(
+            metrics["filler_word_analysis"],
+            {
+                "details": {
+                    "음": 2,
+                    "어": 1,
+                    "그": 1,
+                    "이제": 1,
+                    "약간": 0,
+                    "저": 0,
+                },
+                "total_count": 5,
+            },
+        )
+
+    def test_consecutive_repeats_are_detected_across_punctuation(self):
+        repeats = speech_service.find_consecutive_repeats(
+            "프로젝트, 프로젝트... 프로젝트를 진행했습니다. 네! 네?",
+        )
+
+        self.assertEqual(
+            repeats,
+            [
+                {"expression": "프로젝트", "count": 2},
+                {"expression": "네", "count": 2},
+            ],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
