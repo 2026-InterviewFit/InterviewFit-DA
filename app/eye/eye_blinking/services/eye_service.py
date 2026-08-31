@@ -259,67 +259,61 @@ def extract_eye_landmarks_from_image(image_bytes: bytes) -> dict:
     }
 
 
-# 면접은 읽기보다 대화 상황에 가깝기 때문에 blink rate 평가는
-# 대화 중 일반적으로 관찰되는 범위를 참고한 프로젝트용 보조 지표로 사용한다.
-# 이 값은 질병 진단이나 긴장도의 직접 측정 기준이 아니다.
-BLINK_STABLE_MIN_PER_MINUTE = 10.0
-BLINK_STABLE_MAX_PER_MINUTE = 30.0
-BLINK_CAUTION_LOW_PER_MINUTE = 5.0
-BLINK_CAUTION_HIGH_PER_MINUTE = 35.0
+# 눈 깜빡임 빈도 평가는 긴장도를 직접 진단하는 기준이 아니라
+# 면접 중 비언어적 응시 태도를 확인하기 위한 보조 지표로 사용한다.
+#
+# Doughty (2001)는 정상 성인의 대화(conversation) 상황에서
+# 자발적 눈 깜빡임 빈도의 95% 신뢰구간을 약 10.5~32.5회/분으로 보고하였다.
+# 본 프로젝트는 면접을 대화 중심 활동으로 보고 이 범위를 참고 기준으로 사용한다.
+BLINK_REFERENCE_MIN_PER_MINUTE = 10.5
+BLINK_REFERENCE_MAX_PER_MINUTE = 32.5
 
 
 def _get_blink_evaluation(blinks_per_minute: float) -> str:
-    if BLINK_STABLE_MIN_PER_MINUTE <= blinks_per_minute <= BLINK_STABLE_MAX_PER_MINUTE:
+    """
+    대화 상황에서 보고된 자발적 눈 깜빡임 빈도 범위를 기준으로
+    비언어적 응시 태도에 대한 보조 피드백을 생성한다.
+
+    이 평가는 긴장도나 의학적 상태를 직접 판정하지 않는다.
+    """
+    if blinks_per_minute < BLINK_REFERENCE_MIN_PER_MINUTE:
         return (
-            "면접과 같은 대화 상황에서 비교적 안정적인 눈 깜빡임 빈도입니다. "
-            "비언어적 태도 안정성의 보조 지표로 활용할 수 있습니다."
+            "눈 깜빡임 빈도가 정상 성인의 일반적인 대화 상황에서 보고된 "
+            "참고 범위(약 10.5~32.5회/분)보다 낮은 편입니다. "
+            "장시간 시선을 고정하고 있지는 않은지 확인해보세요. "
+            "개인차와 촬영 환경의 영향도 함께 고려해야 합니다."
         )
 
-    if BLINK_CAUTION_LOW_PER_MINUTE <= blinks_per_minute < BLINK_STABLE_MIN_PER_MINUTE:
+    if blinks_per_minute <= BLINK_REFERENCE_MAX_PER_MINUTE:
         return (
-            "눈 깜빡임 빈도가 일반적인 대화 상황보다 다소 낮은 편입니다. "
-            "개인차와 촬영 환경의 영향을 함께 고려해 확인해주세요."
-        )
-
-    if BLINK_STABLE_MAX_PER_MINUTE < blinks_per_minute <= BLINK_CAUTION_HIGH_PER_MINUTE:
-        return (
-            "눈 깜빡임 빈도가 일반적인 대화 상황보다 다소 높은 편입니다. "
-            "개인차와 촬영 환경의 영향을 함께 고려해 확인해주세요."
-        )
-
-    if blinks_per_minute < BLINK_CAUTION_LOW_PER_MINUTE:
-        return (
-            "눈 깜빡임 빈도가 매우 낮게 측정되었습니다. "
-            "얼굴 검출 상태, 조명, 시선 방향과 함께 결과를 확인해주세요."
+            "눈 깜빡임 빈도가 정상 성인의 대화 상황에서 보고된 "
+            "일반적인 참고 범위(약 10.5~32.5회/분)에 해당합니다. "
+            "비언어적 응시 태도 안정성을 확인하는 보조 지표로 활용할 수 있습니다."
         )
 
     return (
-        "눈 깜빡임 빈도가 매우 높게 측정되었습니다. "
-        "얼굴 검출 상태, 조명, 시선 방향과 함께 결과를 확인해주세요."
+        "눈 깜빡임 빈도가 정상 성인의 일반적인 대화 상황에서 보고된 "
+        "참고 범위(약 10.5~32.5회/분)보다 높은 편입니다. "
+        "눈 깜빡임이 지나치게 빈번하지 않았는지 확인해보세요. "
+        "개인차와 촬영 환경의 영향도 함께 고려해야 합니다."
     )
 
 
 def _get_blink_score(blinks_per_minute: float) -> int:
     """
-    눈 깜빡임 빈도를 비언어적 태도 안정성의 보조 점수로 변환한다.
+    눈 깜빡임 빈도를 사용자에게 직관적으로 보여주기 위한 프로젝트 내부 점수이다.
 
-    - 10~30회/분: 안정 범위 → 100점
-    - 5~10회/분, 30~35회/분: 다소 벗어남 → 80점
-    - 5회/분 미만, 35회/분 초과: 확인 필요 → 60점
+    참고 범위 자체는 Doughty (2001)의 대화 상황 연구값을 사용하지만,
+    100점/80점이라는 점수는 논문에서 제시한 수치가 아니라
+    서비스 UI를 위한 프로젝트 내부 정책이다.
 
-    기존처럼 특정 좁은 구간(예: 15~20회)에만 100점을 부여하지 않아
-    대화 상황에서 자연스럽게 나타날 수 있는 개인차를 과도하게 감점하지 않는다.
+    - 10.5~32.5회/분: 대화 상황 참고 범위 → 100점
+    - 10.5회/분 미만 또는 32.5회/분 초과: 참고 범위 밖 → 80점
     """
-    if BLINK_STABLE_MIN_PER_MINUTE <= blinks_per_minute <= BLINK_STABLE_MAX_PER_MINUTE:
+    if BLINK_REFERENCE_MIN_PER_MINUTE <= blinks_per_minute <= BLINK_REFERENCE_MAX_PER_MINUTE:
         return 100
 
-    if (
-        BLINK_CAUTION_LOW_PER_MINUTE <= blinks_per_minute < BLINK_STABLE_MIN_PER_MINUTE
-        or BLINK_STABLE_MAX_PER_MINUTE < blinks_per_minute <= BLINK_CAUTION_HIGH_PER_MINUTE
-    ):
-        return 80
-
-    return 60
+    return 80
 
 
 def analyze_blinks_from_video(video_path: str) -> dict:
