@@ -87,15 +87,14 @@ def create_question_prompt(
     위 질문과 동일하거나 평가 목적이 유사한 질문은 생성하지 마세요.
     """
 
-    user_prompt = dedent(f"""
+    user_prompt = dedent(f"""    
+    {previous_rule}
     ### 지원 직무
     {job}
-    ### 생성할 질문 개수
-    {count}개
     ### 자기소개서 분석 결과
     {analysis_text}
-    
-    {previous_rule}
+    ### 생성할 질문 개수
+    {count}개
     """)
 
     return system_prompt, user_prompt
