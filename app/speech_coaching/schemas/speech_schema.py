@@ -1,56 +1,182 @@
-from pydantic import BaseModel
-from typing import Dict, List, Optional
+from pydantic import BaseModel, Field
+from typing import Dict, List, Literal, Optional
 
-# FastAPI 요청용 모델
+
+# =========================================================
+# 기존 전체 스피치 분석 요청
+# =========================================================
+
 class SpeechAnalyzeRequest(BaseModel):
     source_type: str
     source_value: str
     job_category: str
     interview_id: int
+    interview_answer_id: Optional[int] = None
+    question_id: Optional[int] = None
+    original_question: Optional[str] = None
 
-# AI 평가 결과용 세부 모델
+
+# =========================================================
+# 꼬리질문용 STT 응답
+# =========================================================
+
+class SpeechTranscriptionResponse(BaseModel):
+    """
+    기본 질문/꼬리질문 답변 음성을
+    Whisper로 텍스트 변환한 결과.
+
+    꼬리질문 생성 단계에서는
+    전체 스피치 분석이 필요하지 않으므로
+    변환된 텍스트만 반환한다.
+    """
+
+    text: str
+
+
+# =========================================================
+# 기존 AI 평가 결과
+# =========================================================
+
 class AiEvaluation(BaseModel):
-    star_score: Dict[str, int]
-    feedback: str
-    keywords: List[str]
-    model_answer: str
+    star_score: Dict[str, int] = Field(
+        ...,
+        alias="star_score"
+    )
 
-# 필러워드(습관어) 분석 모델
+    feedback: str
+
+    keywords: List[str]
+
+    model_answer: str = Field(
+        ...,
+        alias="model_answer"
+    )
+
+    class Config:
+        populate_by_name = True
+
+
+# =========================================================
+# 외부 면접 답변 평가 AI 결과
+# =========================================================
+
+class ExternalStarAnalysis(BaseModel):
+    situation: str
+    task: str
+    action: str
+    result: str
+
+
+class ExternalAiAnalysis(BaseModel):
+    star: ExternalStarAnalysis
+    strengths: List[str]
+    improvements: List[str]
+
+
+# =========================================================
+# 필러워드 분석
+# =========================================================
+
 class FillerWordAnalysis(BaseModel):
     details: Dict[str, int]
-    total_count: int
 
-# 반복 표현 단건 모델
+    total_count: int = Field(
+        ...,
+        alias="total_count"
+    )
+
+    class Config:
+        populate_by_name = True
+
+
+# =========================================================
+# 반복 표현
+# =========================================================
+
 class RepeatedExpression(BaseModel):
     expression: str
     count: int
 
-# 말하기 속도 분석 모델
+
+# =========================================================
+# 말하기 속도
+# =========================================================
+
 class SpeechPaceAnalysis(BaseModel):
     evaluation: str
+
     feedback: str
-    characters_per_second: float
 
-# 음량(데시벨) 및 음량 안정성 모델
-class VolumeAnalysis(BaseModel):
-    volume_db_mean: float
-    volume_db_std: float
+    characters_per_second: float = Field(
+        ...,
+        alias="characters_per_second"
+    )
 
-# 침묵 구간 및 침묵 비율 모델
+    class Config:
+        populate_by_name = True
+
+
+# =========================================================
+# 침묵 분석
+# =========================================================
+
 class SilenceAnalysis(BaseModel):
-    total_silence_seconds: float
-    pause_rate_percent: float
-    critical_silence_count: int
+    total_silence_seconds: float = Field(
+        ...,
+        alias="total_silence_seconds"
+    )
 
-# 최종 응답용 모델
+    pause_rate_percent: float = Field(
+        ...,
+        alias="pause_rate_percent"
+    )
+
+    critical_silence_count: int = Field(
+        ...,
+        alias="critical_silence_count"
+    )
+
+
+# =========================================================
+# 기존 전체 스피치 분석 응답
+# =========================================================
+
 class SpeechReportResponse(BaseModel):
-    text_script: str
-    filler_word_analysis: FillerWordAnalysis
-    repeated_expressions: List[RepeatedExpression]
-    speech_pace_analysis: SpeechPaceAnalysis
-    volume_analysis: VolumeAnalysis
-    silence_analysis: SilenceAnalysis
-    ai_evaluation: AiEvaluation
-    model_answer: str
-    job_category: str
     interview_id: int
+
+    interview_answer_id: Optional[int] = None
+
+    question_id: Optional[int] = None
+
+    original_question: Optional[str] = None
+
+    job_category: str
+
+    text_script: str
+
+    filler_word_analysis: FillerWordAnalysis
+
+    repeated_expressions: List[
+        RepeatedExpression
+    ]
+
+    speech_pace_analysis: SpeechPaceAnalysis
+
+    silence_analysis: SilenceAnalysis
+
+    speech_score: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=100,
+    )
+
+    speech_score_status: Literal[
+        "SCORED",
+        "INSUFFICIENT_DATA",
+    ]
+
+    speech_score_reason: Optional[str] = None
+
+    ai_evaluation: AiEvaluation
+
+    external_ai_analysis: Optional[ExternalAiAnalysis] = None

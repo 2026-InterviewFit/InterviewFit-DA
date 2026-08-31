@@ -1,4 +1,5 @@
-import json
+import asyncio
+
 from google.genai import types
 
 from app.common.exceptions.custom_exception import CustomException
@@ -7,9 +8,15 @@ from app.common.exceptions.status_code import StatusCode
 from app.core.config import settings
 from app.core.gemini_client import question_client
 from app.question.prompts.question_prompts import create_question_prompt
-from app.question.schemas.question_schema import QuestionValidation
+from app.question.schemas.question_schema import QuestionResponse, CoverLetterQuestionAnalysisItem
 
-def generate_first_question(count: int, job: str, cover_letter: str, previous_questions: list[str] | None = None):
+async def generate_first_question(
+    count: int,
+    job: str,
+    analyses: list[CoverLetterQuestionAnalysisItem],
+    previous_questions: list[str] | None,
+    reusable_questions: list[str] | None,
+) -> QuestionResponse:
     if question_client is None:
         raise CustomException(
             status=StatusCode.INTERNAL_SERVER_ERROR,
@@ -17,17 +24,19 @@ def generate_first_question(count: int, job: str, cover_letter: str, previous_qu
             message="Gemini 클라이언트가 초기화되지 않았습니다."
         )
 
-    config = types.GenerateContentConfig(
-        temperature=0.3,
-        max_output_tokens=1024,
-        response_mime_type="application/json",
-    )
-
     system_prompt, user_prompt = create_question_prompt(
         count=count,
         job=job,
-        cover_letter=cover_letter,
-        previous_questions=previous_questions
+        analyses=analyses,
+        previous_questions=(previous_questions or []) + (reusable_questions or []),
+    )
+
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        temperature=0.3,
+        max_output_tokens=1024,
+        response_mime_type="application/json",
+        response_schema=QuestionResponse,
     )
 
     contents = [
@@ -35,60 +44,48 @@ def generate_first_question(count: int, job: str, cover_letter: str, previous_qu
             "role": "user",
             "parts": [
                 {
-                    "text": f"{system_prompt}{user_prompt}"
+                    "text": user_prompt
                 }
             ]
         }
     ]
 
-    try:
-        response = question_client.models.generate_content(
-            model=getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash-lite"),
-            contents=contents,
-            config=config
-        )
-    except Exception:
-        raise CustomException(
-            status=StatusCode.INTERNAL_SERVER_ERROR,
-            code=ErrorCode.QUESTION_GENERATION_FAILED,
-            message="질문 생성 중 오류가 발생했습니다."
-        )
+    parsed: QuestionResponse
 
-    try:
-        question_list = safe_parse(response.text)
-    except ValueError:
-        raise CustomException(
-            status=StatusCode.INTERNAL_SERVER_ERROR,
-            code=ErrorCode.INVALID_QUESTION_RESPONSE,
-            message="질문 생성 결과를 파싱할 수 없습니다."
-        )
+    max_retry = 1
 
-    # 요청한 개수만 사용
-    if len(question_list) > count:
-        question_list = question_list[:count]
+    for attempt in range(max_retry + 1):
+        try:
+            response = await question_client.aio.models.generate_content(
+                model=getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite"),
+                contents=contents,
+                config=config
+            )
+        except Exception:
+            if attempt == max_retry:
+                raise CustomException(
+                    status=StatusCode.INTERNAL_SERVER_ERROR,
+                    code=ErrorCode.QUESTION_GENERATION_FAILED,
+                    message="질문 생성 중 오류가 발생했습니다."
+                )
+            await asyncio.sleep(1)
+            continue
 
-    # 부족한 경우만 실패 처리
-    if len(question_list) < count:
-        raise CustomException(
-            status=StatusCode.INTERNAL_SERVER_ERROR,
-            code=ErrorCode.INVALID_QUESTION_COUNT,
-            message="생성된 질문 개수가 부족합니다."
-        )
+        try:
+            parsed = response.parsed
+            break
+        except Exception:
+            if attempt == max_retry:
+                raise CustomException(
+                    status=StatusCode.INTERNAL_SERVER_ERROR,
+                    code=ErrorCode.INVALID_QUESTION_RESPONSE,
+                    message="질문 생성 결과를 파싱할 수 없습니다."
+                )
+            await asyncio.sleep(1)
+            continue
 
-    try:
-        validated = QuestionValidation(
-            questions=question_list
-        )
-        return validated.questions
-    except Exception as e:
-        raise CustomException(
-            status=StatusCode.INTERNAL_SERVER_ERROR,
-            code=ErrorCode.INVALID_QUESTION_VALIDATION,
-            message="질문 검증에 실패했습니다."
-        )
+    # 요청 개수보다 많이 생성된 경우 제한
+    if len(parsed.questions) > count:
+        parsed.questions = parsed.questions[:count]
 
-def safe_parse(text: str):
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        raise ValueError("면접 질문 리스트를 찾을 수 없습니다.")
+    return parsed

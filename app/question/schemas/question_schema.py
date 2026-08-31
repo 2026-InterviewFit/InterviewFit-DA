@@ -1,29 +1,51 @@
 from pydantic import BaseModel, Field, field_validator
 
+class StarItem(BaseModel):
+    situation: str
+    task: str
+    action: str
+    result: str
+
+class CoverLetterQuestionAnalysisItem(BaseModel):
+    question_number: int
+    summary: str
+    star: StarItem = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    importance_score: float | None = None
+
 class QuestionRequest(BaseModel):
     count: int
     job: str
-    cover_letter: str
+    analyses: list[CoverLetterQuestionAnalysisItem] = Field(default_factory=list)
     previous_questions: list[str] | None = None
+    reusable_questions: list[str] | None = None
+
+class QuestionItem(BaseModel):
+    question: str
+    question_number: int = Field(..., ge=1) # 자소서 문항 번호
 
 class QuestionResponse(BaseModel):
-    questions: list[str]
-
-class QuestionValidation(BaseModel):
-    # LLM 응답 자체가 비어있는 경우 방지
-    questions: list[str] = Field(..., min_length=1)
+    questions: list[QuestionItem] = Field(..., min_length=1)
 
     @field_validator("questions")
     @classmethod
     def validate_questions(cls, questions):
-        if len(set(questions)) != len(questions):
+        question_texts = [item.question for item in questions]
+
+        # 질문 중복 검사
+        if len(set(question_texts)) != len(question_texts):
             raise ValueError("중복 질문이 있습니다.")
 
-        for q in questions:
-            if len(q.strip()) < 10:
+        # 질문 길이 검사
+        for item in questions:
+            question = item.question.strip()
+
+            if len(question) < 10:
                 raise ValueError("질문이 너무 짧습니다.")
 
-            if len(q) > 200:
+            if len(question) > 200:
                 raise ValueError("질문이 너무 깁니다.")
 
         return questions

@@ -14,6 +14,9 @@ def create_gemini_client():
     return genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
+
 # 도메인별 클라이언트 분리
+coverletter_client = create_gemini_client()
 question_client = create_gemini_client()
 followup_client = create_gemini_client()
+pt_interview_client = create_gemini_client()
