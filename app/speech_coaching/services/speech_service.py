@@ -302,7 +302,7 @@ def run_free_whisper_stt(audio_path: str) -> str:
             beam_size=5,
             language="ko",
             condition_on_previous_text=False,
-            temperature=0.0,
+            temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
         )
 
         text = _join_whisper_segments(segments)
@@ -320,7 +320,7 @@ def run_free_whisper_stt(audio_path: str) -> str:
             beam_size=5,
             language=None,
             condition_on_previous_text=False,
-            temperature=0.0,
+            temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
             no_speech_threshold=0.8,
             log_prob_threshold=-2.0,
         )
