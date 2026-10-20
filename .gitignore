@@ -30,3 +30,9 @@ test.mp4
 uploads/frames
 # archives
 *.zip
+
+# Local STT evaluation media
+evaluation/videos/*
+!evaluation/videos/.gitkeep
+temp_audio_*.wav
+temp_video_*.mp4
