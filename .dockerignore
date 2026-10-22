@@ -1,17 +1,33 @@
-.venv
-.git
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Git
+.git/
 .gitignore
-__pycache__
-*.pyc
-.pytest_cache
-.idea
-.vscode
+
+# IDE
+.idea/
+.vscode/
+
+# Environment variables
 .env
+.env.*
 
-models
-downloads
-temp
-cache
+# Local data and cache
+downloads/
+temp/
+tmp/
+cache/
 
+# OS
 .DS_Store
 Thumbs.db
+
+# Tests
+tests/
+test/
+
+evaluation/

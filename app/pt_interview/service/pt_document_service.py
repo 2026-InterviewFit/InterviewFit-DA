@@ -3,7 +3,7 @@ import os
 import re
 from typing import List
 
-import fitz
+import pymupdf
 from dotenv import load_dotenv
 from minio import Minio
 from pptx import Presentation
@@ -181,7 +181,7 @@ class PtDocumentService:
             )
         )
 
-        pdf_document = fitz.open(
+        pdf_document = pymupdf.open(
             stream=file_bytes,
             filetype="pdf",
         )
@@ -251,7 +251,7 @@ class PtDocumentService:
         )
 
         # 2배 정도의 해상도로 렌더링
-        matrix = fitz.Matrix(
+        matrix = pymupdf.Matrix(
             2.0,
             2.0,
         )

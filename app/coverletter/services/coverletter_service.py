@@ -73,7 +73,7 @@ async def _generate(system_prompt: str, user_prompt: str, response_schema):
 
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
-        temperature=0.3,
+        temperature=0.2,
         max_output_tokens=2048,
         response_mime_type="application/json",
         response_schema=response_schema,
